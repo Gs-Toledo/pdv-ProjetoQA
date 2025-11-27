@@ -148,8 +148,7 @@ class NotaFiscalServiceTest {
         ReflectionTestUtils.setField(service, "CAMINHO_XML", temp.toString());
 
         Path file = temp.resolve("teste.xml");
-        Files.writeString(file, "<xml/>");
-
+        Files.write(file, "<xml/>".getBytes());
         service.removeXml("teste");
 
         assertFalse(Files.exists(file));
