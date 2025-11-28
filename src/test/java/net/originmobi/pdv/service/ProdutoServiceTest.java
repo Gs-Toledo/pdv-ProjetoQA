@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Date;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -40,13 +42,19 @@ public class ProdutoServiceTest {
     @Mock
     private VendaProdutoService vendaProdutos;
 
-    // --- Classe a ser testada ---
+    private Date dataValidadeExemplo;
 
     // Injeta os Mocks acima na instância real do ProdutoService
     @InjectMocks
     private ProdutoService service;
     private final Long COD_NOVO = 0L;
     private final Long COD_EXISTENTE = 1L;
+
+    @BeforeEach
+    void setUp() {
+        // Inicializa a data de validade de exemplo (java.util.Date)
+        dataValidadeExemplo = new Date(); 
+    }
 
     // --- Teste de Inicialização ---
 
@@ -181,6 +189,132 @@ public class ProdutoServiceTest {
         });
 
         verify(produtos, never()).movimentaEstoque(any(), any(), anyInt(), any(), any());
+    }
+
+    // Testes do método 'merger' 
+    // Teste para inserção de novo produto quando codprod == 0 E sem tributação
+
+    @Test
+    void merger_QuandoCodprodEhZero_DeveInserirNovoProdutoComSucesso() {
+        String resultado = service.merger( 
+            0L, 
+            1L, 2L, 3L, 0, "Novo Produto Teste", 
+            10.0, 20.0, dataValidadeExemplo, 
+            "SIM", "ATIVO", "UN", ProdutoSubstTributaria.NAO, 
+            "12345678", "12345", 1L, 1L, "SIM"
+        );
+
+        verify(produtos, times(1)).insere(
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), any(java.sql.Date.class), 
+            anyString(), anyString(), anyLong(), anyLong(), anyString()
+        );
+        
+        verify(produtos, never()).atualiza(any(), any(), any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), any(), anyInt(), any(), any(), any(), any(), any());
+
+        assertEquals("Produdo cadastrado com sucesso", resultado);
+    }
+
+    // Teste para atualização de produto existente quando codprod != 0 E sem tributação
+    @Test
+    void merger_QuandoCodprodNaoEhZero_DeveAtualizarProdutoComSucesso() {
+        Long codProdutoExistente = 100L; 
+        
+        String resultado = service.merger(
+            codProdutoExistente, 
+            1L, 2L, 3L, 0, "Produto Atualizado", 
+            15.0, 25.0, dataValidadeExemplo, 
+            "SIM", "ATIVO", "UN", ProdutoSubstTributaria.NAO, 
+            "12345678", "12345", 1L, 1L, "SIM"
+        );
+
+        verify(produtos, times(1)).atualiza(
+            eq(codProdutoExistente), 
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), anyString(), anyString(), 
+            anyLong(), anyLong(), anyString()
+        );
+        
+        verify(produtos, never()).insere(
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), any(java.sql.Date.class), 
+            anyString(), anyString(), anyLong(), anyLong(), anyString()
+        );
+
+        assertEquals("Produto atualizado com sucesso", resultado);
+    }
+
+    // Teste para erro ao cadastrar novo produto quando codprod == 0
+    @Test
+    void merger_QuandoCodprodEhZero_DeveRetornarErroAoCadastrar() {
+        doThrow(new RuntimeException("Simulação de Erro de DB")).when(produtos).insere(
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), any(java.sql.Date.class), 
+            anyString(), anyString(), anyLong(), anyLong(), anyString()
+        );
+
+        String resultado = service.merger(
+            0L, 
+            1L, 2L, 3L, 0, "Produto Falho", 
+            10.0, 20.0, dataValidadeExemplo, 
+            "SIM", "ATIVO", "UN", ProdutoSubstTributaria.NAO, 
+            "12345678", "12345", 1L, 1L, "SIM"
+        );
+
+        verify(produtos, times(1)).insere(
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), any(java.sql.Date.class), 
+            anyString(), anyString(), anyLong(), anyLong(), anyString()
+        );
+        
+        verify(produtos, never()).atualiza(any(), any(), any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), any(), anyInt(), any(), any(), any(), any(), any());
+
+        assertEquals("Erro a cadastrar produto, chame o suporte", resultado);
+    }
+
+
+    // Teste para erro ao atualizar produto existente quando codprod != 0 E tem tributação
+    @Test
+    void merger_QuandoCodprodNaoEhZero_DeveRetornarErroAoAtualizar() {
+        Long codProdutoExistente = 101L;
+
+        doThrow(new RuntimeException("Simulação de Erro de DB ou Tributação Inválida")).when(produtos).atualiza(
+            eq(codProdutoExistente), 
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), anyString(), anyString(), 
+            anyLong(), anyLong(), anyString()
+        );
+
+        String resultado = service.merger(
+            codProdutoExistente, 
+            1L, 2L, 3L, 0, "Produto Tributado", 
+            15.0, 25.0, dataValidadeExemplo, 
+            "SIM", "ATIVO", "UN", ProdutoSubstTributaria.SIM, 
+            "99999999", "66666", 5L, 2L, "SIM" 
+        );
+
+        verify(produtos, times(1)).atualiza(
+            eq(codProdutoExistente), 
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), anyString(), anyString(), 
+            anyLong(), anyLong(), anyString()
+        );
+        
+        verify(produtos, never()).insere(
+            anyLong(), anyLong(), anyLong(), anyInt(), anyString(), 
+            anyDouble(), anyDouble(), any(java.util.Date.class), anyString(), 
+            anyString(), anyString(), anyInt(), any(java.sql.Date.class), 
+            anyString(), anyString(), anyLong(), anyLong(), anyString()
+        );
+
+        assertEquals("Erro a atualizar produto, chame o suporte", resultado);
     }
 
 }
