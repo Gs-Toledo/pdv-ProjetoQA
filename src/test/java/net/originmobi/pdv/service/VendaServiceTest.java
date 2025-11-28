@@ -223,15 +223,79 @@ class VendaServiceTest {
     }
 
     @Test
-    void deveRemoverProdutoQuandoVendaAberta() {
+    @DisplayName("Cenário 1 (Novo): Deve retornar mensagem específica se Venda não for encontrada")
+    void deveRetornarErroQuandoVendaNaoExiste() {
+        // --- ARRANGE ---
+        Long codVenda = 99L;
+        Long posicaoProd = 5L;
+
+        // Simula o repositório retornando null
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(null);
+
+        // --- ACT ---
+        String resultado = service.removeProduto(posicaoProd, codVenda);
+
+        // --- ASSERT ---
+        assertEquals("Venda não encontrada", resultado);
+
+        // Garante que não tentou remover nada no service de produtos
+        verify(vendaProdutos, never()).removeProduto(anyLong());
+    }
+
+    @Test
+    @DisplayName("Cenário 2 (Sucesso): Deve remover produto quando Venda está ABERTA")
+    void deveRemoverProdutoComSucesso() {
+        // --- ARRANGE ---
+        Long codVenda = 1L;
+        Long posicaoProd = 10L;
+
         Venda venda = new Venda();
         venda.setSituacao(VendaSituacao.ABERTA);
-        when(vendas.findByCodigoEquals(1L)).thenReturn(venda);
 
-        String resultado = service.removeProduto(5L, 1L);
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
+
+        // --- ACT ---
+        String resultado = service.removeProduto(posicaoProd, codVenda);
+
+        // --- ASSERT ---
+        assertEquals("ok", resultado);
+
+        // Verifica se a remoção foi chamada
+        verify(vendaProdutos).removeProduto(posicaoProd);
+    }
+
+    @Test
+    @DisplayName("Cenário 3 (Bloqueio): NÃO deve remover produto quando Venda está FECHADA")
+    void naoDeveRemoverProdutoSeVendaFechada() {
+        Long codVenda = 1L;
+        Long posicaoProd = 10L;
+
+        Venda venda = new Venda();
+        venda.setSituacao(VendaSituacao.FECHADA);
+
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
+
+        String resultado = service.removeProduto(posicaoProd, codVenda);
+
+        assertEquals("Venda fechada", resultado);
+
+        verify(vendaProdutos, never()).removeProduto(anyLong());
+    }
+
+    @Test
+    @DisplayName("Cenário 4 (Exception): Erro interno deve cair no catch e retornar 'ok'")
+    void deveTratarErroInterno() {
+        Long codVenda = 1L;
+        Long posicaoProd = 10L;
+
+        doThrow(new RuntimeException("Erro de conexão"))
+                .when(vendas).findByCodigoEquals(codVenda);
+
+        String resultado = service.removeProduto(posicaoProd, codVenda);
 
         assertEquals("ok", resultado);
-        verify(vendaProdutos).removeProduto(5L);
+
+        verify(vendaProdutos, never()).removeProduto(anyLong());
     }
 
     @Test
