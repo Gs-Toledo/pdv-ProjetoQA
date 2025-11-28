@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -225,27 +227,21 @@ class VendaServiceTest {
     @Test
     @DisplayName("Cenário 1 (Novo): Deve retornar mensagem específica se Venda não for encontrada")
     void deveRetornarErroQuandoVendaNaoExiste() {
-        // --- ARRANGE ---
         Long codVenda = 99L;
         Long posicaoProd = 5L;
 
-        // Simula o repositório retornando null
         when(vendas.findByCodigoEquals(codVenda)).thenReturn(null);
 
-        // --- ACT ---
         String resultado = service.removeProduto(posicaoProd, codVenda);
 
-        // --- ASSERT ---
         assertEquals("Venda não encontrada", resultado);
 
-        // Garante que não tentou remover nada no service de produtos
         verify(vendaProdutos, never()).removeProduto(anyLong());
     }
 
     @Test
     @DisplayName("Cenário 2 (Sucesso): Deve remover produto quando Venda está ABERTA")
     void deveRemoverProdutoComSucesso() {
-        // --- ARRANGE ---
         Long codVenda = 1L;
         Long posicaoProd = 10L;
 
@@ -254,13 +250,10 @@ class VendaServiceTest {
 
         when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
 
-        // --- ACT ---
         String resultado = service.removeProduto(posicaoProd, codVenda);
 
-        // --- ASSERT ---
         assertEquals("ok", resultado);
 
-        // Verifica se a remoção foi chamada
         verify(vendaProdutos).removeProduto(posicaoProd);
     }
 
@@ -296,6 +289,41 @@ class VendaServiceTest {
         assertEquals("ok", resultado);
 
         verify(vendaProdutos, never()).removeProduto(anyLong());
+    }
+
+    @Test
+    @DisplayName("Deve retornar uma lista de vendas quando existirem registros")
+    void deveRetornarListaDeVendas() {
+        Venda venda1 = new Venda();
+        venda1.setCodigo(1L);
+
+        Venda venda2 = new Venda();
+        venda2.setCodigo(2L);
+
+        List<Venda> listaMock = Arrays.asList(venda1, venda2);
+
+        when(vendas.findAll()).thenReturn(listaMock);
+
+        List<Venda> resultado = service.lista();
+
+        assertNotNull(resultado);
+        assertEquals(2, resultado.size());
+        assertEquals(1L, resultado.get(0).getCodigo());
+
+        verify(vendas).findAll();
+    }
+
+    @Test
+    @DisplayName("Deve retornar lista vazia quando não houver registros")
+    void deveRetornarListaVazia() {
+        when(vendas.findAll()).thenReturn(Collections.emptyList());
+
+        List<Venda> resultado = service.lista();
+
+        assertNotNull(resultado);
+        assertTrue(resultado.isEmpty());
+
+        verify(vendas).findAll();
     }
 
     @Test
@@ -345,8 +373,45 @@ class VendaServiceTest {
     }
 
     @Test
+    @DisplayName("Erro: Deve lançar exceção se tentar pagar em DINHEIRO com CAIXA FECHADO")
+    void deveFalharSePagarDinheiroSemCaixaAberto() {
+        Long codVenda = 1L;
+
+        Venda vendaMock = new Venda();
+        vendaMock.setSituacao(VendaSituacao.ABERTA);
+        vendaMock.setPessoa(new Pessoa());
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(vendaMock);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        Titulo titulo = new Titulo();
+        TituloTipo tipoDin = new TituloTipo();
+        tipoDin.setSigla("DIN");
+        titulo.setTipo(tipoDin);
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
+
+        when(caixas.caixaIsAberto()).thenReturn(false);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(
+                        codVenda,
+                        1L,
+                        100.0,
+                        0.0,
+                        0.0,
+                        new String[]{"100"},
+                        new String[]{"1"}
+                )
+        );
+
+        assertEquals("nenhum caixa aberto", ex.getMessage());
+    }
+
+    @Test
     @DisplayName("Cenário: Pagamento em CARTÃO DE CRÉDITO")
-    void deveFecharVendaNoCartao() {
+    void deveFecharVendaNoCartaoCredito() {
         Long codVenda = 1L;
         Venda venda = criarVendaMock(true);
         when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
@@ -361,11 +426,113 @@ class VendaServiceTest {
         titulo.setTipo(tipoCart);
         when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
 
-        service.fechaVenda(codVenda, 1L, 100.0, 0.0, 0.0, new String[]{"100"}, new String[]{"20"});
+        service.fechaVenda(
+                codVenda,
+                1L,
+                100.0,
+                0.0,
+                0.0,
+                new String[]{"100"},
+                new String[]{"20"});
 
         verify(cartaoLancamento).lancamento(eq(100.0), eq(Optional.of(titulo)));
         verify(lancamentos, never()).lancamento(any());
     }
+
+    @Test
+    @DisplayName("Cenário: Pagamento em CARTÃO DE DÉBITO")
+    void deveFecharVendaNoCartaoDebito() {
+        Long codVenda = 1L;
+        Venda venda = criarVendaMock(true);
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        Titulo titulo = new Titulo();
+        TituloTipo tipoCart = new TituloTipo();
+        tipoCart.setSigla("CARTDEB");
+        titulo.setTipo(tipoCart);
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
+
+        service.fechaVenda(
+                codVenda,
+                1L,
+                100.0,
+                0.0,
+                0.0,
+                new String[]{"100"},
+                new String[]{"20"});
+
+        verify(cartaoLancamento).lancamento(eq(100.0), eq(Optional.of(titulo)));
+        verify(lancamentos, never()).lancamento(any());
+    }
+
+    @Test
+    @DisplayName("Cenário: Pagamento à Vista mas com Título desconhecido (Nem Din, Nem Cartão)")
+    void deveIgnorarLancamentoSeTituloNaoForDinheiroNemCartao() {
+        Long codVenda = 1L;
+        Venda venda = criarVendaMock(true);
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        Titulo titulo = new Titulo();
+        TituloTipo tipoCart = new TituloTipo();
+        tipoCart.setSigla("CHEQUE");
+        titulo.setTipo(tipoCart);
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
+
+        service.fechaVenda(
+                codVenda,
+                1L,
+                100.0,
+                0.0,
+                0.0,
+                new String[]{"100"},
+                new String[]{"99"});
+
+        verify(cartaoLancamento, never()).lancamento(anyDouble(), any());
+        verify(lancamentos, never()).lancamento(any());
+        verify(vendas).fechaVenda(eq(codVenda), eq(VendaSituacao.FECHADA), anyDouble(), anyDouble(), anyDouble(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Erro: Deve lançar exceção ao tentar vender A PRAZO sem um cliente vinculado")
+    void deveFalharSeVendaPrazoSemCliente() {
+        Long codVenda = 1L;
+
+        Venda vendaMock = mock(Venda.class);
+        when(vendaMock.isAberta()).thenReturn(true);
+        when(vendaMock.getPessoa()).thenReturn(null);
+
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(vendaMock);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("30");
+
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(new Titulo()));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(
+                        codVenda,
+                        1L,
+                        100.0,
+                        0.0,
+                        0.0,
+                        new String[]{"100"},
+                        new String[]{"1"}
+                )
+        );
+
+        assertEquals("Venda sem cliente, verifique", ex.getMessage());
+    }
+
+
 
     @Test
     @DisplayName("Cenário: Pagamento A PRAZO (Duas Parcelas)")
@@ -380,12 +547,16 @@ class VendaServiceTest {
 
         Titulo titulo = new Titulo();
         TituloTipo tipo = new TituloTipo();
-        tipo.setSigla("BOLETO");
+        tipo.setSigla("CARTCRED");
         titulo.setTipo(tipo);
         when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
 
         service.fechaVenda(
-                codVenda, 1L, 100.0, 0.0, 0.0,
+                codVenda,
+                1L,
+                100.0,
+                0.0,
+                0.0,
                 new String[]{"50", "50"},
                 new String[]{"1", "1"}
         );
@@ -397,13 +568,247 @@ class VendaServiceTest {
     }
 
     @Test
+    @DisplayName("Erro: Deve lançar exceção se valor dos produtos for Zero ou Negativo")
+    void deveLancarErroSeValorProdutosInvalido() {
+        Long codVenda = 1L;
+
+        Venda vendaMock = new Venda();
+        vendaMock.setSituacao(VendaSituacao.ABERTA);
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(vendaMock);
+
+        RuntimeException exZero = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(
+                        codVenda,
+                        1L,
+                        0.0,
+                        0.0,
+                        0.0,
+                        new String[]{},
+                        new String[]{}
+                )
+        );
+        assertEquals("Venda sem valor, verifique", exZero.getMessage());
+
+        RuntimeException exNegativo = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(
+                        codVenda,
+                        1L,
+                        -10.50,
+                        0.0,
+                        0.0,
+                        new String[]{},
+                        new String[]{}
+                )
+        );
+        assertEquals("Venda sem valor, verifique", exNegativo.getMessage());
+    }
+
+    @Test
+    @DisplayName("Erro: Deve tratar exceção no UPDATE final da venda (fechaVenda)")
+    void deveTratarErroUpdateFinalVenda() {
+        Long codVenda = 1L;
+
+       Venda vendaMock = criarVendaMock(true);
+        when(vendaMock.isAberta()).thenReturn(true);
+        when(vendaMock.getPessoa()).thenReturn(new Pessoa());
+
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(vendaMock);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        Titulo titulo = new Titulo();
+        TituloTipo tipoCart = new TituloTipo();
+        tipoCart.setSigla("CARTCRED");
+        titulo.setTipo(tipoCart);
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
+        doThrow(new RuntimeException("Erro de conexão SQL"))
+                .when(vendas).fechaVenda(
+                        eq(codVenda),
+                        eq(VendaSituacao.FECHADA),
+                        anyDouble(),
+                        anyDouble(),
+                        anyDouble(),
+                        any(Timestamp.class),
+                        eq(pagTipo)
+                );
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(
+                        codVenda,
+                        1L,
+                        100.0,
+                        0.0,
+                        0.0,
+                        new String[]{"100"},
+                        new String[]{"20"}
+                )
+        );
+
+        assertEquals("Erro ao fechar a venda, chame o suporte", ex.getMessage());
+
+        verify(vendas).fechaVenda(
+                eq(codVenda),
+                eq(VendaSituacao.FECHADA),
+                anyDouble(),
+                anyDouble(),
+                anyDouble(),
+                any(Timestamp.class),
+                eq(pagTipo)
+        );
+    }
+
+    @Test
+    @DisplayName("Erro: Pagamento A Prazo com valor de parcela vazio")
+    void deveFalharAprazoParcelaVazia() {
+        Venda vendaMock = criarVendaMock(true);
+        vendaMock.setPessoa(new Pessoa());
+        when(vendas.findByCodigoEquals(1L)).thenReturn(vendaMock);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("30");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(new Titulo()));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{""}, new String[]{"1"})
+        );
+
+        assertEquals("valor de recebimento invalido", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("Erro: Falha ao gerar parcela (A Prazo)")
+    void deveTratarErroGerarParcela() {
+        Venda venda = criarVendaMock(true);
+        venda.setPessoa(new Pessoa());
+        when(vendas.findByCodigoEquals(1L)).thenReturn(venda);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("30");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(new Titulo()));
+
+        doThrow(new RuntimeException("Erro DB")).when(parcelas).gerarParcela(
+                anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                any(), anyInt(), anyInt(), any(), any()
+        );
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{"100"}, new String[]{"1"})
+        );
+
+        assertNull(ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("Erro: Pagamento à Vista com valor de parcela vazio")
+    void deveFalharAvistaDinheiroParcelaVazia() {
+        Venda venda = criarVendaMock(true);
+        when(vendas.findByCodigoEquals(1L)).thenReturn(venda);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(new TituloTipo());
+        titulo.getTipo().setSigla("DIN");
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
+
+        when(caixas.caixaIsAberto()).thenReturn(true);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{""}, new String[]{"1"})
+        );
+
+        assertEquals("Parcela sem valor, verifique", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("Erro: Falha ao realizar lançamento no caixa (À Vista Dinheiro)")
+    void deveTratarErroLancamentoCaixa() {
+        Venda vendaMock = criarVendaMock(true);
+        when(vendas.findByCodigoEquals(1L)).thenReturn(vendaMock);
+        when(caixas.caixaIsAberto()).thenReturn(true);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(new TituloTipo());
+        titulo.getTipo().setSigla("DIN");
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
+
+        try (MockedStatic<Aplicacao> appMock = Mockito.mockStatic(Aplicacao.class)) {
+            Aplicacao app = mock(Aplicacao.class);
+            appMock.when(Aplicacao::getInstancia).thenReturn(app);
+            when(app.getUsuarioAtual()).thenReturn("user");
+            when(usuarios.buscaUsuario("user")).thenReturn(new Usuario());
+
+            doThrow(new RuntimeException("Erro SQL")).when(lancamentos).lancamento(any(CaixaLancamento.class));
+
+            RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                    service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{"100"}, new String[]{"1"})
+            );
+
+            assertEquals("Erro ao fechar a venda, chame o suporte", ex.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("Erro: Deve capturar exceção no cadastro do Receber e lançar mensagem de suporte")
+    void deveTratarErroAoCadastrarReceber() {
+        Long codVenda = 1L;
+
+        Venda vendaMock = new Venda();
+        vendaMock.setSituacao(VendaSituacao.ABERTA);
+        vendaMock.setPessoa(new Pessoa());
+
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(vendaMock);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        doThrow(new RuntimeException("Erro de conexão com banco de dados"))
+                .when(receberService).cadastrar(any(Receber.class));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(
+                        codVenda,
+                        1L,
+                        100.0,
+                        0.0,
+                        0.0,
+                        new String[]{"100"},
+                        new String[]{"1"}
+                )
+        );
+
+        assertEquals("Erro ao fechar a venda, chame o suporte", ex.getMessage());
+
+        verify(receberService).cadastrar(any(Receber.class));
+    }
+
+    @Test
     @DisplayName("Erro: Venda Fechada")
     void deveLancarErroSeVendaJaFechada() {
         Venda venda = criarVendaMock(false);
         when(vendas.findByCodigoEquals(1L)).thenReturn(venda);
 
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{}, new String[]{})
+                service.fechaVenda(1L,
+                        1L,
+                        100.0,
+                        0.0,
+                        0.0,
+                        new String[]{},
+                        new String[]{})
         );
         assertEquals("venda fechada", ex.getMessage());
     }
@@ -429,6 +834,17 @@ class VendaServiceTest {
         );
 
         assertEquals("Valor das parcelas diferente do valor total de produtos, verifique", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("Deve retornar a quantidade de vendas em aberto")
+    void deveRetornarQtdVendasEmAberto() {
+        when(vendas.qtdVendasEmAberto()).thenReturn(5);
+
+        int qtd = service.qtdAbertos();
+
+        assertEquals(5, qtd);
+        verify(vendas).qtdVendasEmAberto();
     }
 
     private Venda criarVendaMock(boolean aberta) {
