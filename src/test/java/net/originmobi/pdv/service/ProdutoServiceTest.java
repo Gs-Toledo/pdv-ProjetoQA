@@ -136,4 +136,51 @@ public class ProdutoServiceTest {
         verify(produtos, never()).movimentaEstoque(any(), any(), anyInt(), any(), any());
     }
 
+    //testes ajusteEstoque
+    //testar ajuste de estoque para produto que controla estoque
+    @Test
+    void ajusteEstoque_deveMovimentarEstoqueSeProdutoControlar() {
+        Long codProdutoTeste = 15L;
+        int qtdAjuste = 50;
+        
+        Produto produto = new Produto();
+        produto.setControla_estoque(ProdutoControleEstoque.SIM); 
+        when(produtos.findByCodigoIn(codProdutoTeste)).thenReturn(produto);
+
+        service.ajusteEstoque(
+            codProdutoTeste, 
+            qtdAjuste, 
+            EntradaSaida.ENTRADA, 
+            "Ajuste Manual", 
+            java.sql.Date.valueOf(java.time.LocalDate.now()));
+
+        verify(produtos, times(1)).movimentaEstoque(
+            eq(codProdutoTeste), 
+            eq(EntradaSaida.ENTRADA.toString()), 
+            eq(qtdAjuste), 
+            eq("Ajuste Manual"), 
+            any(java.sql.Date.class));
+    }
+
+    //testar ajuste de estoque para produto que não controla estoque
+    @Test
+    void ajusteEstoque_deveLancarExcecaoSeProdutoNaoControlarEstoque() {
+        Long codProdutoTeste = 16L;
+        
+        Produto produto = new Produto();
+        produto.setControla_estoque(ProdutoControleEstoque.NAO); 
+        when(produtos.findByCodigoIn(codProdutoTeste)).thenReturn(produto);
+
+        assertThrows(RuntimeException.class, () -> {
+            service.ajusteEstoque(
+                codProdutoTeste, 
+                10, 
+                EntradaSaida.ENTRADA, 
+                "Ajuste Manual", 
+                java.sql.Date.valueOf(java.time.LocalDate.now()));
+        });
+
+        verify(produtos, never()).movimentaEstoque(any(), any(), anyInt(), any(), any());
+    }
+
 }
