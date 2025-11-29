@@ -80,5 +80,4 @@ hs_err_pid*
 # Se você criar um override para testes locais
 docker-compose.override.yml
 
-# Caso você mapeie volumes de banco de dados localmente no futuro
-# Exemplo: volumes
+report-jacoco
