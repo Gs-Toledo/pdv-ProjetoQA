@@ -2,7 +2,9 @@ package net.originmobi.pdv.service;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -10,6 +12,11 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import net.originmobi.pdv.filter.ProdutoFilter;
 
 import java.util.Collections;
 import java.util.List;
@@ -315,6 +322,83 @@ public class ProdutoServiceTest {
         );
 
         assertEquals("Erro a atualizar produto, chame o suporte", resultado);
+    }
+
+    //Teste para buscar produtos 
+    //teste para buscar produtos com codigo existente
+    @Test
+    void buscaProduto_deveRetornarOptionalPreenchidoParaCodigoExistente() {
+        Long codigoExistente = 20L;
+        Produto produtoMock = new Produto();
+        produtoMock.setCodigo(codigoExistente);
+        
+        when(produtos.findById(codigoExistente)).thenReturn(Optional.of(produtoMock));
+
+        Optional<Produto> resultado = service.buscaProduto(codigoExistente);
+
+        assertTrue(resultado.isPresent());
+        assertEquals(codigoExistente, resultado.get().getCodigo());
+        
+        verify(produtos, times(1)).findById(codigoExistente);
+    }
+
+    // teste para buscar produto com código inexistente
+    @Test
+    void buscaProduto_deveRetornarOptionalVazioParaCodigoInexistente() {
+        Long codigoInexistente = 999L;
+        
+        when(produtos.findById(codigoInexistente)).thenReturn(Optional.empty());
+
+        Optional<Produto> resultado = service.buscaProduto(codigoInexistente);
+
+        assertFalse(resultado.isPresent());
+        
+        verify(produtos, times(1)).findById(codigoInexistente);
+    }
+
+    //Teste filter
+    //teste para filtrar produtos por descrição contendo um termo específico
+    @Test
+    void filter_deveFiltrarPorDescricaoContendo() {
+        String termoBusca = "Biscoito";
+        ProdutoFilter filter = new ProdutoFilter();
+        filter.setDescricao(termoBusca);
+        
+        Pageable pageableMock = mock(Pageable.class);
+        
+        Produto p1 = new Produto(); p1.setDescricao("Biscoito Cream Cracker");
+        Produto p2 = new Produto(); p2.setDescricao("Biscoito Maizena");
+        List<Produto> listaMock = List.of(p1, p2);
+        Page<Produto> paginaMock = new PageImpl<>(listaMock, pageableMock, listaMock.size());
+
+        when(produtos.findByDescricaoContaining(eq(termoBusca), eq(pageableMock))).thenReturn(paginaMock);
+
+        Page<Produto> resultado = service.filter(filter, pageableMock);
+
+        verify(produtos, times(1)).findByDescricaoContaining(eq(termoBusca), eq(pageableMock));
+        
+        assertEquals(2, resultado.getTotalElements());
+        assertEquals("Biscoito Cream Cracker", resultado.getContent().get(0).getDescricao());
+    }
+
+    //teste para filtrar produtos quando a descrição for nula
+    @Test
+    void filter_deveRetornarTodosProdutosQuandoDescricaoForNula() {
+        ProdutoFilter filter = new ProdutoFilter();
+        filter.setDescricao(null);
+        
+        Pageable pageableMock = mock(Pageable.class);
+        
+        Page<Produto> paginaMock = mock(Page.class);
+
+        String coringa = "%";
+        when(produtos.findByDescricaoContaining(eq(coringa), eq(pageableMock))).thenReturn(paginaMock);
+
+        service.filter(filter, pageableMock);
+
+        verify(produtos, times(1)).findByDescricaoContaining(eq(coringa), eq(pageableMock));
+        
+        verify(produtos, never()).findByDescricaoContaining(eq(null), any());
     }
 
 }
