@@ -17,8 +17,7 @@ import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -512,5 +511,603 @@ class RecebimentoServiceTest {
         });
 
         assertEquals("Erro ao remover orçamento, chame o suporte", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("Deve processar recebimento com múltiplas parcelas completamente")
+    void deveProcessarRecebimentoMultiplasParcelasCompleto() {
+        Long codReceber = 10L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(150.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(1L);
+        p1.setValor_restante(50.00);
+
+        Parcela p2 = new Parcela();
+        p2.setCodigo(2L);
+        p2.setValor_restante(50.00);
+
+        Parcela p3 = new Parcela();
+        p3.setCodigo(3L);
+        p3.setValor_restante(50.00);
+
+        List<Parcela> parcelasLista = Arrays.asList(p1, p2, p3);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(anyLong())).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(parcelasLista);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> when(mock.getUsuarioAtual()).thenReturn("user"))) {
+
+            service.receber(codReceber, 150.00, 0.0, 0.0, 5L);
+        }
+
+        verify(parcelas).receber(eq(1L), eq(50.00), anyDouble(), anyDouble());
+        verify(parcelas).receber(eq(2L), eq(50.00), anyDouble(), anyDouble());
+        verify(parcelas).receber(eq(3L), eq(50.00), anyDouble(), anyDouble());
+    }
+
+    @Test
+    @DisplayName("Deve processar recebimento em CARTÃO CRÉDITO")
+    void deveProcessarRecebimentoCartaoCredito() {
+        Long codReceber = 100L;
+        Long codTitulo = 7L;
+        Double vlRecebido = 75.00;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(75.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setCodigo(codTitulo);
+        titulo.setTipo(criarTituloTipoModel(TituloTipo.CARTCRED.toString()));
+
+        Parcela parcela = new Parcela();
+        parcela.setCodigo(25L);
+        parcela.setValor_restante(75.00);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(codTitulo)).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(Arrays.asList(parcela));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> {
+                    when(mock.getUsuarioAtual()).thenReturn("usuario_teste");
+                })) {
+
+            service.receber(codReceber, vlRecebido, 0.0, 0.0, codTitulo);
+        }
+
+        verify(cartaoLancamentos).lancamento(anyDouble(), any(Optional.class));
+        verify(lancamentos, never()).lancamento(any(CaixaLancamento.class));
+    }
+
+    @Test
+    @DisplayName("Deve processar recebimento com valor exato")
+    void deveProcessarRecebimentoValorExato() {
+        Long codReceber = 100L;
+        Long codTitulo = 5L;
+        Double vlRecebido = 100.00;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(100.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setCodigo(codTitulo);
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela parcela = new Parcela();
+        parcela.setCodigo(10L);
+        parcela.setValor_restante(100.00);
+
+        Caixa caixa = new Caixa();
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(codTitulo)).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(Arrays.asList(parcela));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+        when(caixas.caixaAberto()).thenReturn(Optional.of(caixa));
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> {
+                    when(mock.getUsuarioAtual()).thenReturn("usuario_teste");
+                })) {
+
+            ArgumentCaptor<Recebimento> captor = ArgumentCaptor.forClass(Recebimento.class);
+
+            String resultado = service.receber(codReceber, vlRecebido, 0.0, 0.0, codTitulo);
+
+            assertEquals("Recebimento realizado com sucesso", resultado);
+            verify(recebimentos).save(captor.capture());
+
+            Recebimento salvo = captor.getValue();
+            assertEquals(vlRecebido, salvo.getValor_recebido());
+        }
+    }
+
+    @Test
+    @DisplayName("Deve validar que recebimento com valores de desconto e acréscimo são armazenados")
+    void deveArmazenarDescontoEAcrescimo() {
+        Long codReceber = 100L;
+        Long codTitulo = 5L;
+        Double vlRecebido = 95.00;
+        Double vlDesconto = 5.00;
+        Double vlAcrescimo = 0.00;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(100.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setCodigo(codTitulo);
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela parcela = new Parcela();
+        parcela.setCodigo(10L);
+        parcela.setValor_restante(100.00);
+
+        Caixa caixa = new Caixa();
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(codTitulo)).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(Arrays.asList(parcela));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+        when(caixas.caixaAberto()).thenReturn(Optional.of(caixa));
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> {
+                    when(mock.getUsuarioAtual()).thenReturn("usuario_teste");
+                })) {
+
+            ArgumentCaptor<Recebimento> captor = ArgumentCaptor.forClass(Recebimento.class);
+
+            service.receber(codReceber, vlRecebido, vlAcrescimo, vlDesconto, codTitulo);
+
+            verify(recebimentos).save(captor.capture());
+
+            Recebimento salvo = captor.getValue();
+            assertEquals(vlDesconto, salvo.getValor_desconto());
+            assertEquals(vlAcrescimo, salvo.getValor_acrescimo());
+        }
+    }
+
+    @Test
+    @DisplayName("Deve processar recebimento com parcelas de valores diferentes")
+    void deveProcessarRecebimentoParcelasValoresDiferentes() {
+        Long codReceber = 10L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(200.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(1L);
+        p1.setValor_restante(100.00);
+
+        Parcela p2 = new Parcela();
+        p2.setCodigo(2L);
+        p2.setValor_restante(75.00);
+
+        Parcela p3 = new Parcela();
+        p3.setCodigo(3L);
+        p3.setValor_restante(25.00);
+
+        List<Parcela> parcelasLista = Arrays.asList(p1, p2, p3);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(anyLong())).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(parcelasLista);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> when(mock.getUsuarioAtual()).thenReturn("user"))) {
+
+            service.receber(codReceber, 150.00, 0.0, 0.0, 5L);
+        }
+
+        verify(parcelas).receber(eq(1L), eq(100.00), anyDouble(), anyDouble());
+        verify(parcelas).receber(eq(2L), eq(50.00), anyDouble(), anyDouble());
+    }
+
+    @Test
+    @DisplayName("Deve validar titulo com tipo PIX")
+    void deveProcessarRecebimentoPix() {
+        Long codReceber = 100L;
+        Long codTitulo = 8L;
+        Double vlRecebido = 50.00;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(50.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setCodigo(codTitulo);
+        titulo.setTipo(criarTituloTipoModel("PIX"));
+
+        Parcela parcela = new Parcela();
+        parcela.setCodigo(20L);
+        parcela.setValor_restante(50.00);
+
+        Caixa caixa = new Caixa();
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(codTitulo)).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(Arrays.asList(parcela));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+        when(caixas.caixaAberto()).thenReturn(Optional.of(caixa));
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> {
+                    when(mock.getUsuarioAtual()).thenReturn("usuario_teste");
+                })) {
+
+            service.receber(codReceber, vlRecebido, 0.0, 0.0, codTitulo);
+        }
+
+        verify(lancamentos).lancamento(any(CaixaLancamento.class));
+        verify(cartaoLancamentos, never()).lancamento(anyDouble(), any(Optional.class));
+    }
+
+    @Test
+    @DisplayName("Deve verificar que título é vinculado ao recebimento")
+    void deveVincularTituloAoRecebimento() {
+        Long codReceber = 100L;
+        Long codTitulo = 5L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(50.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setCodigo(codTitulo);
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela parcela = new Parcela();
+        parcela.setCodigo(10L);
+        parcela.setValor_restante(50.00);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(codTitulo)).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(Arrays.asList(parcela));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> {
+                    when(mock.getUsuarioAtual()).thenReturn("usuario_teste");
+                })) {
+
+            service.receber(codReceber, 50.00, 0.0, 0.0, codTitulo);
+        }
+
+        assertEquals(titulo, recebimento.getTitulo());
+    }
+
+    @Test
+    @DisplayName("Deve validar data de processamento é definida")
+    void deveDefinirDataProcessamento() {
+        Long codReceber = 100L;
+        Long codTitulo = 5L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(50.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela parcela = new Parcela();
+        parcela.setCodigo(10L);
+        parcela.setValor_restante(50.00);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(codTitulo)).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(Arrays.asList(parcela));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> {
+                    when(mock.getUsuarioAtual()).thenReturn("usuario_teste");
+                })) {
+
+            service.receber(codReceber, 50.00, 0.0, 0.0, codTitulo);
+        }
+
+        ArgumentCaptor<Recebimento> captor = ArgumentCaptor.forClass(Recebimento.class);
+        verify(recebimentos).save(captor.capture());
+
+        assertNotNull(captor.getValue().getData_processamento());
+    }
+
+    @Test
+    @DisplayName("Deve abrir recebimento com múltiplas parcelas")
+    void deveAbrirRecebimentoMultiplasParcelas() {
+        Long codPessoa = 1L;
+        String[] arrayParcelas = {"10", "20", "30"};
+
+        Pessoa pessoaMock = new Pessoa();
+        pessoaMock.setCodigo(codPessoa);
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(10L);
+        p1.setQuitado(0);
+        p1.setValor_restante(100.0);
+        Receber r1 = new Receber();
+        r1.setPessoa(pessoaMock);
+        p1.setReceber(r1);
+
+        Parcela p2 = new Parcela();
+        p2.setCodigo(20L);
+        p2.setQuitado(0);
+        p2.setValor_restante(50.0);
+        Receber r2 = new Receber();
+        r2.setPessoa(pessoaMock);
+        p2.setReceber(r2);
+
+        Parcela p3 = new Parcela();
+        p3.setCodigo(30L);
+        p3.setQuitado(0);
+        p3.setValor_restante(25.0);
+        Receber r3 = new Receber();
+        r3.setPessoa(pessoaMock);
+        p3.setReceber(r3);
+
+        when(parcelas.busca(10L)).thenReturn(p1);
+        when(parcelas.busca(20L)).thenReturn(p2);
+        when(parcelas.busca(30L)).thenReturn(p3);
+        when(pessoas.buscaPessoa(codPessoa)).thenReturn(Optional.of(pessoaMock));
+
+        when(recebimentos.save(any(Recebimento.class))).thenAnswer(invocation -> {
+            Recebimento r = invocation.getArgument(0);
+            r.setCodigo(600L);
+            return r;
+        });
+
+        String resultado = service.abrirRecebimento(codPessoa, arrayParcelas);
+
+        assertEquals("600", resultado);
+
+        ArgumentCaptor<Recebimento> captor = ArgumentCaptor.forClass(Recebimento.class);
+        verify(recebimentos).save(captor.capture());
+        assertEquals(175.0, captor.getValue().getValor_total());
+    }
+
+    @Test
+    @DisplayName("Deve processar recebimento com valor mínimo válido")
+    void deveProcessarRecebimentoValorMinimo() {
+        Long codReceber = 100L;
+        Long codTitulo = 5L;
+        Double vlRecebido = 0.01;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(100.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela parcela = new Parcela();
+        parcela.setCodigo(10L);
+        parcela.setValor_restante(100.00);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(codTitulo)).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(Arrays.asList(parcela));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> {
+                    when(mock.getUsuarioAtual()).thenReturn("usuario_teste");
+                })) {
+
+            String resultado = service.receber(codReceber, vlRecebido, 0.0, 0.0, codTitulo);
+            assertEquals("Recebimento realizado com sucesso", resultado);
+        }
+    }
+
+    @Test
+    @DisplayName("Deve validar que parcelas com sobra zero não recebem valores negativos")
+    void deveValidarCalculoDeSobraZero() {
+        Long codReceber = 10L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(100.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(1L);
+        p1.setValor_restante(60.00);
+
+        List<Parcela> parcelasLista = Arrays.asList(p1);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(anyLong())).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(parcelasLista);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> when(mock.getUsuarioAtual()).thenReturn("user"))) {
+
+            service.receber(codReceber, 30.00, 0.0, 0.0, 5L);
+        }
+
+        ArgumentCaptor<Double> valorCaptor = ArgumentCaptor.forClass(Double.class);
+        verify(parcelas).receber(eq(1L), valorCaptor.capture(), anyDouble(), anyDouble());
+
+        assertTrue(valorCaptor.getValue() >= 0);
+        assertEquals(30.00, valorCaptor.getValue(), 0.01);
+    }
+
+    @Test
+    @DisplayName("Deve calcular corretamente vlsobra quando valor recebido é menor que valor restante")
+    void deveCalcularVlsobraCorretamente() {
+        Long codReceber = 10L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(100.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(1L);
+        p1.setValor_restante(100.00);
+
+        Parcela p2 = new Parcela();
+        p2.setCodigo(2L);
+        p2.setValor_restante(50.00);
+
+        List<Parcela> parcelasLista = Arrays.asList(p1, p2);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(anyLong())).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(parcelasLista);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> when(mock.getUsuarioAtual()).thenReturn("user"))) {
+
+            service.receber(codReceber, 80.00, 0.0, 0.0, 5L);
+        }
+
+        verify(parcelas).receber(eq(1L), eq(80.00), anyDouble(), anyDouble());
+        verify(parcelas, never()).receber(eq(2L), anyDouble(), anyDouble(), anyDouble());
+    }
+
+    @Test
+    @DisplayName("Deve processar quando vlrecebido zera antes do último elemento")
+    void deveProcessarQuandoVlrecebidoZera() {
+        Long codReceber = 10L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(200.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(1L);
+        p1.setValor_restante(30.00);
+
+        Parcela p2 = new Parcela();
+        p2.setCodigo(2L);
+        p2.setValor_restante(30.00);
+
+        Parcela p3 = new Parcela();
+        p3.setCodigo(3L);
+        p3.setValor_restante(30.00);
+
+        List<Parcela> parcelasLista = Arrays.asList(p1, p2, p3);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(anyLong())).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(parcelasLista);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> when(mock.getUsuarioAtual()).thenReturn("user"))) {
+
+            service.receber(codReceber, 60.00, 0.0, 0.0, 5L);
+        }
+
+        verify(parcelas).receber(eq(1L), eq(30.00), anyDouble(), anyDouble());
+        verify(parcelas).receber(eq(2L), eq(30.00), anyDouble(), anyDouble());
+        verify(parcelas, never()).receber(eq(3L), anyDouble(), anyDouble(), anyDouble());
+    }
+
+    @Test
+    @DisplayName("Deve testar condição vlsobra maior que zero")
+    void deveTestarCondicaoVlsobraMaiorQueZero() {
+        Long codReceber = 10L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(100.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(1L);
+        p1.setValor_restante(40.00);
+
+        Parcela p2 = new Parcela();
+        p2.setCodigo(2L);
+        p2.setValor_restante(40.00);
+
+        List<Parcela> parcelasLista = Arrays.asList(p1, p2);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(anyLong())).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(parcelasLista);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> when(mock.getUsuarioAtual()).thenReturn("user"))) {
+
+            service.receber(codReceber, 70.00, 0.0, 0.0, 5L);
+        }
+
+        verify(parcelas).receber(eq(1L), eq(40.00), anyDouble(), anyDouble());
+        verify(parcelas).receber(eq(2L), eq(30.00), anyDouble(), anyDouble());
+    }
+
+    @Test
+    @DisplayName("Deve validar loop quando todas parcelas não são quitadas completamente")
+    void deveValidarLoopParcelasNaoQuitadasCompletamente() {
+        Long codReceber = 10L;
+
+        Recebimento recebimento = new Recebimento();
+        recebimento.setCodigo(codReceber);
+        recebimento.setValor_total(100.00);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(criarTituloTipoModel("DINHEIRO"));
+
+        Parcela p1 = new Parcela();
+        p1.setCodigo(1L);
+        p1.setValor_restante(50.00);
+
+        List<Parcela> parcelasLista = Arrays.asList(p1);
+
+        when(recebimentos.findById(codReceber)).thenReturn(Optional.of(recebimento));
+        when(titulos.busca(anyLong())).thenReturn(Optional.of(titulo));
+        when(receParcelas.parcelasDoReceber(codReceber)).thenReturn(parcelasLista);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+        when(usuarios.buscaUsuario(any())).thenReturn(new Usuario());
+
+        try (MockedConstruction<Aplicacao> mocked = mockConstruction(Aplicacao.class,
+                (mock, context) -> when(mock.getUsuarioAtual()).thenReturn("user"))) {
+
+            service.receber(codReceber, 25.00, 0.0, 0.0, 5L);
+        }
+
+        verify(parcelas).receber(eq(1L), eq(25.00), anyDouble(), anyDouble());
     }
 }
