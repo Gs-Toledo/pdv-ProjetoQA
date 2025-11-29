@@ -8,6 +8,7 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -222,4 +223,99 @@ class PessoaServiceTest {
 
         assertEquals("Erro ao tentar cadastrar pessoa, chame o suporte", exception.getMessage());
     }
+
+    @Test
+    @DisplayName("Deve lançar exceção quando cidade não é encontrada")
+    void testCadastrarCidadeNaoEncontrada() throws ParseException {
+        // Arrange
+        when(cidadeService.busca(anyLong())).thenReturn(Optional.empty());
+
+        // Act & Assert
+        NoSuchElementException ex = assertThrows(NoSuchElementException.class, () -> {
+            service.cadastrar(0L, "João", "J", "111", "01/01/2000", "Obs",
+                    1L, 1L, "Rua", "Bairro", "1", "Cep", "Ref",
+                    1L, "98888-1111", "FIXO", redirectAttributes);
+        });
+
+        assertNotNull(ex);
+        verify(repository, never()).save(any(Pessoa.class));
+    }
+
+    @Test
+    @DisplayName("Tipo de telefone inválido deve cair no default CELULAR")
+    void testCadastrarTelefoneTipoInvalido() throws ParseException {
+        when(cidadeService.busca(anyLong())).thenReturn(Optional.of(new Cidade()));
+        when(enderecoService.cadastrar(any())).thenReturn(new Endereco());
+        when(telefoneService.cadastrar(any())).thenReturn(new Telefone());
+
+        service.cadastrar(0L, "Teste", "T", "111", "01/01/2000", "Obs",
+                1L, 1L, "Rua", "Bairro", "1", "CEP", "Ref",
+                1L, "99999-0000", "SATELITE", redirectAttributes);
+
+        verify(telefoneService).cadastrar(argThat(f -> f.getTipo().equals(TelefoneTipo.CELULAR)));
+    }
+
+
+    @Test
+    @DisplayName("Deve lançar ParseException quando data de nascimento é inválida")
+    void testCadastrarDataInvalida() {
+        // Permite chegar até o parse
+        when(cidadeService.busca(anyLong())).thenReturn(Optional.of(new Cidade()));
+        when(enderecoService.cadastrar(any())).thenReturn(new Endereco());
+
+        String dataInvalida = "31-02-2020";
+
+        assertThrows(ParseException.class, () -> {
+            service.cadastrar(0L, "Teste", "T", "111", dataInvalida, "Obs",
+                    1L, 1L, "Rua", "Bairro", "1", "CEP", "Ref",
+                    1L, "9999", "FIXO", redirectAttributes);
+        });
+    }
+
+    @Test
+    @DisplayName("Deve cadastrar pessoa mesmo sem telefone")
+    void testCadastrarSemTelefone() throws ParseException {
+        when(cidadeService.busca(anyLong())).thenReturn(Optional.of(new Cidade()));
+        when(enderecoService.cadastrar(any())).thenReturn(new Endereco());
+        when(repository.findByCpfcnpjContaining(anyString())).thenReturn(null);
+
+        String retorno = service.cadastrar(0L, "Ana", "A", "111", "01/01/1990", "Obs",
+                1L, 1L, "Rua", "Bairro", "1", "CEP", "Ref",
+                1L, "", "FIXO", redirectAttributes);
+
+        assertEquals("Pessoa salva com sucesso", retorno);
+        verify(repository).save(any(Pessoa.class));
+    }
+
+    @Test
+    @DisplayName("Deve atualizar pessoa mantendo telefone existente")
+    void testAtualizarMantendoTelefone() throws ParseException {
+        Pessoa pessoaExistente = new Pessoa();
+        pessoaExistente.setCodigo(10L);
+        Telefone telefone = new Telefone();
+        pessoaExistente.setTelefone(Arrays.asList(telefone));
+
+        // mocks necessários para chegar até o save
+        when(cidadeService.busca(anyLong())).thenReturn(Optional.of(new Cidade()));
+        when(enderecoService.cadastrar(any())).thenReturn(new Endereco());
+        when(telefoneService.cadastrar(any())).thenReturn(telefone);
+
+        service.cadastrar(10L, "Carlos", "C", "555", "10/10/1990", "Obs",
+                1L, 1L, "Rua", "Bairro", "1", "CEP", "Ref",
+                1L, "7777-8888", "FIXO", redirectAttributes);
+
+        verify(repository).save(argThat(p -> p.getCodigo().equals(10L)));
+    }
+
+
+    @Test
+    @DisplayName("Deve retornar Optional vazio quando pessoa não é encontrada")
+    void testBuscaPessoaNaoEncontrada() {
+        when(repository.findById(99L)).thenReturn(Optional.empty());
+
+        Optional<Pessoa> resultado = service.buscaPessoa(99L);
+
+        assertFalse(resultado.isPresent());
+    }
+
 }
