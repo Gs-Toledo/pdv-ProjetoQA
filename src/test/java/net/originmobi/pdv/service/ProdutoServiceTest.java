@@ -20,6 +20,7 @@ import net.originmobi.pdv.filter.ProdutoFilter;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.Date;
 
@@ -368,7 +369,7 @@ public class ProdutoServiceTest {
         
         Produto p1 = new Produto(); p1.setDescricao("Biscoito Cream Cracker");
         Produto p2 = new Produto(); p2.setDescricao("Biscoito Maizena");
-        List<Produto> listaMock = List.of(p1, p2);
+        List<Produto> listaMock = Arrays.asList(p1, p2);
         Page<Produto> paginaMock = new PageImpl<>(listaMock, pageableMock, listaMock.size());
 
         when(produtos.findByDescricaoContaining(eq(termoBusca), eq(pageableMock))).thenReturn(paginaMock);
