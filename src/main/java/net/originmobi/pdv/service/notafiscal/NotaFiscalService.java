@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Date;
@@ -50,139 +51,132 @@ public class NotaFiscalService {
 	@Value("${nfe.xml.path:/tmp/nfe}")
 	private String CAMINHO_XML;
 
-	private LocalDate dataAtual;
-
 	public List<NotaFiscal> lista() {
 		return notasFiscais.findAll();
 	}
 
 	@Transactional(readOnly = false, propagation = Propagation.REQUIRED)
 	public String cadastrar(Long coddesti, String natureza, NotaFiscalTipo tipo) {
-		Optional<Empresa> empresa = empresas.verificaEmpresaCadastrada();
-		Optional<Pessoa> pessoa = pessoas.buscaPessoa(coddesti);
+		Empresa empresa = empresas.verificaEmpresaCadastrada()
+				.orElseThrow(() -> new RuntimeException("Nenhuma empresa cadastrada, verifique"));
 
-		if (!empresa.isPresent())
-			throw new RuntimeException("Nenhuma empresa cadastrada, verifique");
+		Pessoa pessoa = pessoas.buscaPessoa(coddesti)
+				.orElseThrow(() -> new RuntimeException("Favor, selecione o destinatário"));
 
-		if (!pessoa.isPresent())
-			throw new RuntimeException("Favor, selecione o destinatário");
+		if (empresa.getParametro().getSerie_nfe() == 0) {
+			throw new RuntimeException("Não existe série cadastrada para o modelo 55, verifique");
+		}
 
-		// prepara informações iniciais da nota fiscal
+		// Prepara objetos auxiliares
 		FreteTipo frete = new FreteTipo();
 		frete.setCodigo(4L);
+
 		NotaFiscalFinalidade finalidade = new NotaFiscalFinalidade();
 		finalidade.setCodigo(1L);
+
+		// Dados fixos e do parâmetro
 		int modelo = 55;
-		int serie = empresa.map(Empresa::getParametro).get().getSerie_nfe();
-
-		if (empresa.map(Empresa::getParametro).get().getSerie_nfe() == 0)
-			throw new RuntimeException("Não existe série cadastrada para o modelo 55, verifique");
-
-		// opção 1 é emissão normal, as outras opções (2, 3, 4, 5) são para contigência
+		int serie = empresa.getParametro().getSerie_nfe();
 		int tipoEmissao = 1;
-		dataAtual = LocalDate.now();
-		Date cadastro = Date.valueOf(dataAtual);
+		int tipoAmbiente = empresa.getParametro().getAmbiente();
 		String verProc = "0.0.1-beta";
-		int tipoAmbiente = empresa.get().getParametro().getAmbiente();
+		Date cadastro = Date.valueOf(LocalDate.now());
 
-		// cadastra os totais iniciais da nota fiscal
+		// Cadastra totais (Propaga erro se falhar, sem try-catch desnecessário)
 		NotaFiscalTotais totais = new NotaFiscalTotais(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 		try {
 			notaTotais.cadastro(totais);
 		} catch (Exception e) {
-			throw new RuntimeException("Erro ao cadastrar a nota, chame o suporte");
+			throw new RuntimeException("Erro ao cadastrar a nota, chame o suporte", e);
 		}
 
-		// cadastra a nota fiscal
-		NotaFiscal nota = null;
+		// Cadastra nota
 		try {
-			// pega ultima nota cadastradas + 1
 			Long numeroNota = notasFiscais.buscaUltimaNota(serie);
+			NotaFiscal notaFiscal = new NotaFiscal(numeroNota, modelo, tipo, natureza, serie, empresa,
+					pessoa, tipoEmissao, verProc, frete, finalidade, totais, tipoAmbiente, cadastro);
 
-			NotaFiscal notaFiscal = new NotaFiscal(numeroNota, modelo, tipo, natureza, serie, empresa.get(),
-					pessoa.get(), tipoEmissao, verProc, frete, finalidade, totais, tipoAmbiente, cadastro);
-
-			nota = notasFiscais.save(notaFiscal);
+			NotaFiscal notaSalva = notasFiscais.save(notaFiscal);
+			return notaSalva.getCodigo().toString();
 
 		} catch (Exception e) {
-			System.out.println("Erro " + e);
-			throw new RuntimeException("Erro ao cadastrar a nota, chame o suporte");
+			throw new RuntimeException("Erro ao cadastrar a nota, chame o suporte", e);
 		}
-
-		return nota.getCodigo().toString();
 	}
 
 	public Integer geraDV(String codigo) {
-		try {
-			int total = 0;
-			int peso = 2;
-
-			for (int i = 0; i < codigo.length(); i++) {
-				total += (codigo.charAt((codigo.length() - 1) - i) - '0') * peso;
-				peso++;
-				if (peso == 10) {
-					peso = 2;
-				}
-			}
-			int resto = total % 11;
-			return (resto == 0 || resto == 1) ? 0 : (11 - resto);
-		} catch (Exception e) {
+		if (codigo == null || codigo.isEmpty())
 			return 0;
+
+		// Remove caracteres não numéricos para evitar erro de parse
+		if (!codigo.matches("\\d+"))
+			return 0;
+
+		int total = 0;
+		int peso = 2;
+
+		for (int i = 0; i < codigo.length(); i++) {
+			total += (codigo.charAt((codigo.length() - 1) - i) - '0') * peso;
+			peso++;
+			if (peso == 10) {
+				peso = 2;
+			}
 		}
+		int resto = total % 11;
+		return (resto == 0 || resto == 1) ? 0 : (11 - resto);
 	}
 
 	public void salvaXML(String xml, String chaveNfe) {
-		Path DIRETORIO;
-
 		try {
-			if (Paths.get(CAMINHO_XML).isAbsolute()) {
-				DIRETORIO = Paths.get(CAMINHO_XML);
-			} else {
-				String contexto = new File(".").getCanonicalPath();
-				DIRETORIO = Paths.get(contexto, CAMINHO_XML);
-			}
+			Path arquivoDestino = resolveArquivo(chaveNfe);
 
-			File dirFile = DIRETORIO.toFile();
+			// Garante diretórios
+			File dirFile = arquivoDestino.getParent().toFile();
 			if (!dirFile.exists()) {
-				dirFile.mkdirs();
+				if (!dirFile.mkdirs()) {
+					throw new IOException("Falha ao criar diretório: " + dirFile.getAbsolutePath());
+				}
 			}
 
-			PrintWriter out = new PrintWriter(
-					new FileWriter(DIRETORIO.resolve(chaveNfe + ".xml").toFile()));
+			// Escreve arquivo (Try-with-resources fecha automaticamente)
+			try (PrintWriter out = new PrintWriter(new FileWriter(arquivoDestino.toFile()))) {
+				out.write(xml);
+			}
 
-			out.write(xml);
-			out.close();
+			System.out.println("Arquivo gravado com sucesso em " + arquivoDestino.toString());
 
-			System.out.println("Arquivo gravado com sucesso em " + DIRETORIO.toString());
-
-		} catch (Exception e) {
-			e.printStackTrace();
+		} catch (IOException e) {
+			// Converte erro de IO checado em não-checado para não sujar a assinatura,
+			// mas PERMITE que o erro suba para ser testado.
+			throw new RuntimeException("Erro ao salvar XML", e);
 		}
 	}
 
-	/*
-	 * responsável por remover o xml quando o mesmo já existe na nota que foi
-	 * regerada
-	 */
 	public void removeXml(String chave_acesso) {
 		try {
-			Path diretorio;
-
-			if (Paths.get(CAMINHO_XML).isAbsolute()) {
-				diretorio = Paths.get(CAMINHO_XML);
-			} else {
-				String contexto = new File(".").getCanonicalPath();
-				diretorio = Paths.get(contexto, CAMINHO_XML);
-			}
-
-			Path arquivo = diretorio.resolve(chave_acesso + ".xml");
+			Path arquivo = resolveArquivo(chave_acesso);
 			System.out.println("XML para deletar " + arquivo.toString());
-
-			java.nio.file.Files.deleteIfExists(arquivo);
-
-		} catch (Exception e) {
+			Files.deleteIfExists(arquivo);
+		} catch (IOException e) {
 			System.out.println("Erro ao deletar XML " + e);
 		}
+	}
+
+	// Método auxiliar para evitar duplicação de lógica de caminho
+	private Path resolveArquivo(String nomeArquivo) throws IOException {
+
+		if (CAMINHO_XML == null) {
+			throw new IOException("Caminho do XML não configurado (null)");
+		}
+
+		Path diretorioBase;
+		if (Paths.get(CAMINHO_XML).isAbsolute()) {
+			diretorioBase = Paths.get(CAMINHO_XML);
+		} else {
+			String contexto = new File(".").getCanonicalPath();
+			diretorioBase = Paths.get(contexto, CAMINHO_XML);
+		}
+		return diretorioBase.resolve(nomeArquivo + ".xml");
 	}
 
 	public Optional<NotaFiscal> busca(Long codnota) {
@@ -190,18 +184,12 @@ public class NotaFiscalService {
 	}
 
 	public void emitir(NotaFiscal notaFiscal) {
-
-		// gera o xml e pega a chave de acesso do mesmo
 		String chaveNfe = geraXmlNfe.gerarXML(notaFiscal);
-
-		// seta a chave de acesso na nota fiscal para gravala no banco
 		notaFiscal.setChave_acesso(chaveNfe);
-
 		notasFiscais.save(notaFiscal);
 	}
 
 	public int totalNotaFiscalEmitidas() {
 		return notasFiscais.totalNotaFiscalEmitidas();
 	}
-
 }
