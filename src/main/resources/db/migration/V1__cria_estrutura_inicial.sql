@@ -1431,7 +1431,7 @@ CREATE DEFINER = CURRENT_USER TRIGGER `pdv`.`insere_estoque_inicial_AFTER_INSERT
 BEGIN
 	SET @codprod = new.codigo;
     
-    insert into produto_estoque (produto_codigo, qtd) values (@codprod, 0);
+    insert into produto_estoque (produto_codigo, qtd) values (@codprod, 5);
 
 END$$
 
