@@ -5,6 +5,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import static org.mockito.ArgumentMatchers.any;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.when;
 import java.util.Optional;
 import java.util.Collections;
 import java.util.List;
+import java.util.Arrays;
 
 import net.originmobi.pdv.enumerado.EntradaSaida;
 import net.originmobi.pdv.enumerado.notafiscal.NotaFiscalTipo;
@@ -238,7 +240,7 @@ class NotaFiscalItemServiceTest {
         
         // Simulação do Produto
         Tributacao tributacao = new Tributacao();
-        tributacao.setRegra(List.of(regraCorreta));
+        List<TributacaoRegra> regras = Arrays.asList(regraCorreta);
         
         Produto produtoValido = new Produto();
         produtoValido.setNcm("0101.01.01");
@@ -250,7 +252,7 @@ class NotaFiscalItemServiceTest {
         
         when(produtos.buscaProduto(COD_PROD)).thenReturn(Optional.of(produtoValido));
         when(notas.busca(1L)).thenReturn(Optional.of(notaFiscal));
-        
+        when(itemServer.save(any(NotaFiscalItem.class))).thenAnswer(i -> i.getArguments()[0]);
 
         assertDoesNotThrow(() -> {
             service.insere(COD_PROD, 1L, 1, NotaFiscalTipo.SAIDA);
