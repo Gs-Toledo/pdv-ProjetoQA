@@ -23,42 +23,6 @@ public class VendaSistemaTest {
 
     private static final String BASE_URL = "http://localhost:8080";
 
-    private void criarTitulo() {
-        try {
-            driver.get(BASE_URL + "/titulos");
-            WebElement botaoNovo = wait.until(ExpectedConditions.elementToBeClickable(By.linkText("Novo")));
-            botaoNovo.click();
-            WebElement campoDescricao = wait.until(ExpectedConditions.elementToBeClickable(By.id("descricao")));
-            campoDescricao.clear();
-            campoDescricao.sendKeys("selenium");
-            WebElement botaoSalvar = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("input[type='submit'][value='Salvar']")));
-            botaoSalvar.click();
-            Thread.sleep(1000);
-        } catch (Exception e) {
-            System.out.println("Erro ao criar título: " + e.getMessage());
-        }
-    }
-
-    private void abrirCaixa() {
-        try {
-            driver.get(BASE_URL + "/caixa");
-            WebElement botaoAbrirNovo = wait.until(ExpectedConditions.elementToBeClickable(By.linkText("Abrir Novo")));
-            botaoAbrirNovo.click();
-            WebElement campoObservacao = wait.until(ExpectedConditions.elementToBeClickable(By.id("descricao")));
-            campoObservacao.clear();
-            campoObservacao.sendKeys("Teste Selenium");
-            WebElement campoValorAbertura = wait.until(ExpectedConditions.elementToBeClickable(By.id("valorAbertura")));
-            campoValorAbertura.clear();
-            campoValorAbertura.sendKeys("100");
-            WebElement botaoAbrir = wait.until(ExpectedConditions.elementToBeClickable(By.linkText("Abrir")));
-            botaoAbrir.click();
-            WebElement mensagemSucessoCaixa = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".alert-success span")));
-            assertTrue(mensagemSucessoCaixa.isDisplayed(), "Caixa não foi aberto com sucesso!");
-        } catch (Exception e) {
-            System.out.println("Erro ao abrir caixa: " + e.getMessage());
-        }
-    }
-
     @BeforeEach
     public void setup() {
         driver = WebDriverManager.chromedriver().create();
@@ -79,8 +43,8 @@ public class VendaSistemaTest {
 
         wait.until(ExpectedConditions.not(ExpectedConditions.urlContains("/login")));
 
-        criarTitulo();
-        abrirCaixa();
+        criacaoTitulo();
+        aberturaCaixa();
 
         driver.get(BASE_URL + "/venda/status/ABERTA");
         WebElement tituloPedidos = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("h1.titulo-h1")));
@@ -169,10 +133,98 @@ public class VendaSistemaTest {
         }
     }
 
+    // RNF-01: Desempenho do Processamento de Venda
+    @Test
+    public void testeDesempenhoFechamentoVenda() {
+
+        WebElement botaoNovoPedido = wait.until(ExpectedConditions.elementToBeClickable(By.linkText("Novo Pedido")));
+        botaoNovoPedido.click();
+
+        WebElement selectCliente = wait.until(ExpectedConditions.elementToBeClickable(By.id("cliente")));
+        new Select(selectCliente).selectByIndex(1);
+
+        WebElement botaoSalvar = wait.until(ExpectedConditions.elementToBeClickable(By.id("btn-salva")));
+        botaoSalvar.click();
+
+        WebElement botaoDropdown = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("button[data-id='codigoProduto']")));
+        botaoDropdown.click();
+
+        WebElement selectOriginal = driver.findElement(By.id("codigoProduto"));
+        ((org.openqa.selenium.JavascriptExecutor) driver).executeScript("arguments[0].selectedIndex = 1; arguments[0].dispatchEvent(new Event('change'));", selectOriginal);
+
+        WebElement botaoInserir = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(".js-addvenda-produto")));
+        botaoInserir.click();
+
+        WebElement botaoGerarVenda = wait.until(ExpectedConditions.elementToBeClickable(By.id("btn-venda")));
+        botaoGerarVenda.click();
+
+        WebElement selectFormaPagamento = wait.until(ExpectedConditions.elementToBeClickable(By.id("pagamento")));
+        new Select(selectFormaPagamento).selectByIndex(1);
+
+        WebElement botaoPagar = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(".btn-pagamento")));
+
+
+        long tempoInicio = System.currentTimeMillis();
+
+        botaoPagar.click();
+
+        wait.until(ExpectedConditions.alertIsPresent());
+
+        long tempoFim = System.currentTimeMillis();
+
+        long duracaoProcessamento = tempoFim - tempoInicio;
+
+        System.out.println("Tempo de processamento da venda: " + duracaoProcessamento + "ms");
+
+        driver.switchTo().alert().accept();
+
+        long slaMaximo = 3000;
+
+        assertTrue(duracaoProcessamento < slaMaximo,
+                "Falha de Desempenho: O fechamento da venda demorou " + duracaoProcessamento +
+                        "ms, excedendo o limite de " + slaMaximo + "ms.");
+    }
+
     @AfterEach
     public void tearDown() {
         if (driver != null) {
             driver.quit();
+        }
+    }
+
+    private void criacaoTitulo() {
+        try {
+            driver.get(BASE_URL + "/titulos");
+            WebElement botaoNovo = wait.until(ExpectedConditions.elementToBeClickable(By.linkText("Novo")));
+            botaoNovo.click();
+            WebElement campoDescricao = wait.until(ExpectedConditions.elementToBeClickable(By.id("descricao")));
+            campoDescricao.clear();
+            campoDescricao.sendKeys("Teste Selenium");
+            WebElement botaoSalvar = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("input[type='submit'][value='Salvar']")));
+            botaoSalvar.click();
+            Thread.sleep(1000);
+        } catch (Exception e) {
+            System.out.println("Erro ao criar título: " + e.getMessage());
+        }
+    }
+
+    private void aberturaCaixa() {
+        try {
+            driver.get(BASE_URL + "/caixa");
+            WebElement botaoAbrirNovo = wait.until(ExpectedConditions.elementToBeClickable(By.linkText("Abrir Novo")));
+            botaoAbrirNovo.click();
+            WebElement campoObservacao = wait.until(ExpectedConditions.elementToBeClickable(By.id("descricao")));
+            campoObservacao.clear();
+            campoObservacao.sendKeys("Teste Selenium");
+            WebElement campoValorAbertura = wait.until(ExpectedConditions.elementToBeClickable(By.id("valorAbertura")));
+            campoValorAbertura.clear();
+            campoValorAbertura.sendKeys("100");
+            WebElement botaoAbrir = wait.until(ExpectedConditions.elementToBeClickable(By.linkText("Abrir")));
+            botaoAbrir.click();
+            WebElement mensagemSucessoCaixa = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".alert-success span")));
+            assertTrue(mensagemSucessoCaixa.isDisplayed(), "Caixa não foi aberto com sucesso!");
+        } catch (Exception e) {
+            System.out.println("Erro ao abrir caixa: " + e.getMessage());
         }
     }
 
