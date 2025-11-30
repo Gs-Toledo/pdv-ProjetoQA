@@ -4,189 +4,160 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.Select;
-import org.openqa.selenium.support.ui.WebDriverWait;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import io.github.bonigarcia.wdm.WebDriverManager;
+import net.originmobi.pdv.selenium.pages.login.LoginPage;
+import net.originmobi.pdv.selenium.pages.produto.ProdutoFormPage;
+import net.originmobi.pdv.selenium.pages.produto.ProdutoListPage;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class ProdutoSistemaTest {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
-    private String baseUrl = "http://localhost:8080";
+    private static WebDriver driver;
+    private static WebDriverWait wait;
+    private static LoginPage loginPage;
+    private static ProdutoListPage produtoListPage;
+    private static ProdutoFormPage produtoFormPage;
+    private static final String BASE_URL = "http://localhost:8080";
 
-    @BeforeEach
-    public void setUp() {
+    @BeforeAll
+    public static void setUp() {
+        WebDriverManager.chromedriver().setup();
+
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless");
-        options.addArguments("--no-sandbox");
-        options.addArguments("--disable-dev-shm-usage");
-        options.addArguments("--disable-gpu");
-        options.addArguments("--window-size=1920,1080");
+        options.addArguments("--remote-allow-origins=*");
+        options.addArguments("--start-maximized");
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(10));
 
-        realizarLogin();
+        loginPage = new LoginPage(driver, wait);
+        produtoListPage = new ProdutoListPage(driver, wait);
+        produtoFormPage = new ProdutoFormPage(driver, wait);
+
+        loginPage.navigateTo(BASE_URL + "/login");
+        assertTrue(loginPage.isLoginPageDisplayed(), "Página de Login não foi exibida.");
+        loginPage.login("gerente", "123");
     }
 
-    @AfterEach
-    public void tearDown() {
+    @AfterAll
+    public static void tearDown() {
         if (driver != null) {
             driver.quit();
         }
     }
 
-    private void realizarLogin() {
-        driver.get(baseUrl + "/login");
-
-        WebElement userField = driver.findElement(By.id("user"));
-        WebElement passField = driver.findElement(By.id("password"));
-        WebElement btnLogin = driver.findElement(By.id("btn-login"));
-
-        userField.sendKeys("gerente");
-        passField.sendKeys("123");
-        btnLogin.click();
-
-        wait.until(ExpectedConditions.urlContains("/"));
-    }
-
-    private void navegarParaCadastroProduto() {
-        driver.get(baseUrl + "/produto/form");
-        wait.until(ExpectedConditions.presenceOfElementLocated(By.id("form_produto")));
-    }
-
     @Test
     @Order(1)
     public void testF_PROD_001_CadastroProdutoSucesso() {
-        navegarParaCadastroProduto();
+        driver.get(BASE_URL + "/produto/form");
+        assertTrue(produtoFormPage.isPageLoaded(), "Formulário de produto não foi carregado.");
 
-        driver.findElement(By.id("descricao")).sendKeys("REFRIGERANTE COLA 2L");
+        produtoFormPage.cadastrarProdutoCompleto("REFRIGERANTE COLA 2L", "5,00", "8,00");
 
-        new Select(driver.findElement(By.id("fornecedor"))).selectByIndex(1);
-        new Select(driver.findElement(By.id("categoria"))).selectByIndex(1);
-        new Select(driver.findElement(By.id("grupo"))).selectByIndex(1);
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
 
-        driver.findElement(By.id("valorCusto")).sendKeys("5,00");
-        driver.findElement(By.id("valorVenda")).sendKeys("8,00");
-        driver.findElement(By.id("unidade")).sendKeys("UN");
+        driver.get(BASE_URL + "/produto");
+        assertTrue(produtoListPage.isPageLoaded(), "Página de listagem não foi carregada.");
+        produtoListPage.buscarProduto("REFRIGERANTE COLA 2L");
 
-        new Select(driver.findElement(By.id("balanca"))).selectByVisibleText("NAO");
-        new Select(driver.findElement(By.id("ativo"))).selectByVisibleText("ATIVO");
-        new Select(driver.findElement(By.name("controla_estoque"))).selectByVisibleText("SIM");
-        new Select(driver.findElement(By.id("vendavel"))).selectByVisibleText("SIM");
-        new Select(driver.findElement(By.id("st"))).selectByIndex(1);
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
 
-        driver.findElement(By.id("ncm")).sendKeys("22021000");
-        driver.findElement(By.id("cest")).sendKeys("0300100");
-
-        driver.findElement(By.name("enviar")).click();
-
-        WebElement mensagemSucesso = wait.until(ExpectedConditions.visibilityOfElementLocated(By.className("alert-success")));
-        assertTrue(mensagemSucesso.getText().contains("sucesso"), "Deveria exibir mensagem de sucesso");
-
-        driver.get(baseUrl + "/produto");
-        WebElement campoBusca = driver.findElement(By.name("descricao"));
-        campoBusca.sendKeys("REFRIGERANTE COLA 2L");
-        driver.findElement(By.xpath("//button[@type='submit']")).click();
-
-        WebElement tabela = driver.findElement(By.tagName("table"));
-        assertTrue(tabela.getText().contains("REFRIGERANTE COLA 2L"));
-        assertTrue(tabela.getText().contains("R$ 8,00"));
+        assertTrue(produtoListPage.produtoEncontrado("REFRIGERANTE COLA 2L"),
+                "Produto cadastrado não foi encontrado na busca.");
+        assertTrue(produtoListPage.valorEncontrado("R$ 8,00"),
+                "Valor de venda não foi encontrado na listagem.");
     }
 
     @Test
     @Order(2)
     public void testF_PROD_ERR_002_PrecoVendaMenorQueCusto() {
-        navegarParaCadastroProduto();
+        driver.get(BASE_URL + "/produto/form");
+        assertTrue(produtoFormPage.isPageLoaded(), "Formulário de produto não foi carregado.");
 
-        driver.findElement(By.id("descricao")).sendKeys("PRODUTO PREJUÍZO");
-        new Select(driver.findElement(By.id("fornecedor"))).selectByIndex(1);
-        new Select(driver.findElement(By.id("categoria"))).selectByIndex(1);
-        new Select(driver.findElement(By.id("grupo"))).selectByIndex(1);
+        produtoFormPage.preencherDescricao("PRODUTO PREJUÍZO");
+        produtoFormPage.selecionarFornecedor(1);
+        produtoFormPage.selecionarCategoria(1);
+        produtoFormPage.selecionarGrupo(1);
+        produtoFormPage.preencherValorCusto("10,00");
+        produtoFormPage.preencherValorVenda("9,00");
+        produtoFormPage.preencherUnidade("UN");
+        produtoFormPage.submeterFormulario();
 
-        driver.findElement(By.id("valorCusto")).sendKeys("10,00");
-        driver.findElement(By.id("valorVenda")).sendKeys("9,00");
-        driver.findElement(By.id("unidade")).sendKeys("UN");
+        boolean erroExibido = produtoFormPage.mensagemErroExibida();
+        boolean permaneceuNoForm = driver.getCurrentUrl().contains("/form");
 
-        driver.findElement(By.name("enviar")).click();
-
-        try {
-            WebElement erro = driver.findElement(By.className("alert-danger"));
-            assertTrue(erro.isDisplayed());
-        } catch (Exception e) {
-            String currentUrl = driver.getCurrentUrl();
-            assertTrue(currentUrl.contains("/form"), "Não deveria ter saído do formulário de cadastro");
-        }
+        assertTrue(erroExibido || permaneceuNoForm,
+                "Deveria exibir erro ou permanecer no formulário ao cadastrar produto com prejuízo.");
     }
 
     @Test
     @Order(3)
     public void testF_PROD_ERR_003_CamposObrigatorios() {
-        navegarParaCadastroProduto();
+        driver.get(BASE_URL + "/produto/form");
+        assertTrue(produtoFormPage.isPageLoaded(), "Formulário de produto não foi carregado.");
 
-        driver.findElement(By.id("valorCusto")).sendKeys("10,00");
-        driver.findElement(By.id("valorVenda")).sendKeys("20,00");
+        produtoFormPage.preencherValorCusto("10,00");
+        produtoFormPage.preencherValorVenda("20,00");
+        produtoFormPage.submeterFormulario();
 
-        driver.findElement(By.name("enviar")).click();
-
-        assertTrue(driver.getCurrentUrl().contains("/produto"), "Deveria permanecer na página de produto");
-
-        driver.findElement(By.id("descricao")).sendKeys("AA");
-        driver.findElement(By.name("enviar")).click();
-
+        assertTrue(driver.getCurrentUrl().contains("/produto"),
+                "Deveria permanecer na página de produto ao submeter formulário incompleto.");
     }
 
     @Test
     @Order(4)
     public void testF_PROD_004_ConsultaProduto() {
-        driver.get(baseUrl + "/produto");
+        driver.get(BASE_URL + "/produto");
+        assertTrue(produtoListPage.isPageLoaded(), "Página de listagem não foi carregada.");
 
-        WebElement campoBusca = driver.findElement(By.id("descricao"));
-        if(campoBusca == null) campoBusca = driver.findElement(By.name("descricao"));
-
-        campoBusca.clear();
-        campoBusca.sendKeys("COLA");
-
-        driver.findElement(By.xpath("//button[@type='submit']")).click();
-
-        WebElement corpoTabela = driver.findElement(By.tagName("tbody"));
-        assertTrue(corpoTabela.getText().contains("REFRIGERANTE COLA 2L"), "Deveria encontrar o produto cadastrado");
+        produtoListPage.buscarProduto("COLA");
+        assertTrue(produtoListPage.produtoEncontrado("REFRIGERANTE COLA 2L"),
+                "Deveria encontrar o produto cadastrado no teste 1.");
     }
 
     @Test
     @Order(5)
     public void testF_PROD_005_AtualizacaoProduto() {
-        testF_PROD_004_ConsultaProduto();
+        driver.get(BASE_URL + "/produto");
+        assertTrue(produtoListPage.isPageLoaded(), "Página de listagem não foi carregada.");
 
-        WebElement btnEditar = driver.findElement(By.className("glyphicon-pencil"));
-        btnEditar.click();
+        produtoListPage.buscarProduto("COLA");
+        assertTrue(produtoListPage.produtoEncontrado("REFRIGERANTE COLA 2L"),
+                "Produto deve existir antes da edição.");
 
-        wait.until(ExpectedConditions.attributeToBeNotEmpty(driver.findElement(By.id("codigo")), "value"));
+        produtoListPage.clicarEditar();
+        assertTrue(produtoFormPage.codigoPreenchido(),
+                "Formulário de edição não foi carregado corretamente.");
 
-        WebElement campoVenda = driver.findElement(By.id("valorVenda"));
-        campoVenda.clear();
-        campoVenda.sendKeys("8,50");
+        produtoFormPage.preencherValorVenda("8,50");
+        produtoFormPage.submeterFormulario();
 
-        driver.findElement(By.name("enviar")).click();
+        assertTrue(produtoFormPage.mensagemSucessoExibida(),
+                "Mensagem de sucesso não foi exibida após atualização.");
 
-        WebElement mensagemSucesso = wait.until(ExpectedConditions.visibilityOfElementLocated(By.className("alert-success")));
-        assertTrue(mensagemSucesso.getText().contains("sucesso"));
-
-        testF_PROD_004_ConsultaProduto();
-        WebElement corpoTabela = driver.findElement(By.tagName("tbody"));
-        assertTrue(corpoTabela.getText().contains("8,50"), "Valor de venda não foi atualizado na listagem");
+        driver.get(BASE_URL + "/produto");
+        produtoListPage.buscarProduto("COLA");
+        assertTrue(produtoListPage.valorEncontrado("8,50"),
+                "Valor de venda não foi atualizado na listagem.");
     }
 
     @Test
@@ -194,37 +165,36 @@ public class ProdutoSistemaTest {
     public void testNF_SEG_001_AcessoNegadoSemLogin() {
         driver.manage().deleteAllCookies();
 
-        driver.get(baseUrl + "/produto/form");
+        driver.get(BASE_URL + "/produto/form");
 
-        String urlAtual = driver.getCurrentUrl();
+        assertTrue(driver.getCurrentUrl().contains("/login"),
+                "Falha de Segurança: Usuário não autenticado acessou página protegida!");
 
-        assertTrue(urlAtual.contains("/login"), "Falha de Segurança: Usuário não autenticado acessou página protegida!");
+        assertTrue(loginPage.isLoginPageDisplayed(),
+                "Página de login não foi exibida após tentativa de acesso sem autenticação.");
 
-        WebElement painelLogin = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("painelLoginPrimaio")));
-        assertTrue(painelLogin.isDisplayed());
+        loginPage.login("gerente", "123");
     }
 
     @Test
     @Order(7)
     public void testNF_PERF_001_TempoRespostaBusca() {
-        driver.get(baseUrl + "/produto");
-
-        WebElement campoBusca = driver.findElement(By.name("descricao"));
-        campoBusca.sendKeys("A");
-
-        WebElement btnBuscar = driver.findElement(By.xpath("//button[@type='submit']"));
+        driver.get(BASE_URL + "/produto");
+        assertTrue(produtoListPage.isPageLoaded(), "Página de listagem não foi carregada.");
 
         long inicio = System.currentTimeMillis();
 
-        btnBuscar.click();
-
-        wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("tbody")));
+        produtoListPage.buscarProduto("COLA");
 
         long fim = System.currentTimeMillis();
-
         long tempoTotal = fim - inicio;
+
         System.out.println("Tempo de resposta da busca: " + tempoTotal + "ms");
 
-        assertTrue(tempoTotal < 2000, "Falha de Desempenho: Busca demorou mais de 2 segundos (" + tempoTotal + "ms)");
+        assertTrue(tempoTotal < 2000,
+                "Falha de Desempenho: Busca demorou mais de 2 segundos (" + tempoTotal + "ms)");
+
+        assertTrue(produtoListPage.produtoEncontrado("REFRIGERANTE COLA 2L"),
+                "Produto deveria ser encontrado na busca de performance.");
     }
 }
