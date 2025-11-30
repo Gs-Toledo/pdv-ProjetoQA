@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.InvalidAlgorithmParameterException;
@@ -49,15 +50,8 @@ public class AssinaXML {
 	private KeyInfo keyInfo;
 
 	public String assinaXML(String xml) {
-		String path = "";
 
-		try {
-			path = new File(".").getCanonicalPath();
-		} catch (Exception e) {
-			System.out.println(e);
-		}
-
-		String caminhoCertificado = path + "/" + "src/main/resources/certificado/certificado.pfx";
+		String caminhoCertificado = "certificado/certificado.pfx";
 		String senhaCertificado = "spcbrasil";
 
 		String xmlAssinado = "";
@@ -107,19 +101,41 @@ public class AssinaXML {
 
 	private void loadCertificates(String certificado, String senha, XMLSignatureFactory signatureFactory)
 			throws Exception {
+		InputStream entrada = null;
 
-		InputStream entrada = new FileInputStream(certificado);
+		// 1. Tenta carregar do Classpath (dentro do JAR/WAR)
+		entrada = getClass().getClassLoader().getResourceAsStream(certificado);
+
+		// 2. Se falhar, tenta carregar de um caminho fixo no Docker
+		// (/app/certificado/...)
+		if (entrada == null) {
+			File arquivoDocker = new File("/app/certificado/certificado.pfx");
+			if (arquivoDocker.exists()) {
+				System.out.println("Certificado encontrado no sistema de arquivos: " + arquivoDocker.getAbsolutePath());
+				entrada = new FileInputStream(arquivoDocker);
+			}
+		}
+
+		// 3. Se ainda for nulo, lança erro
+		if (entrada == null) {
+			throw new FileNotFoundException(
+					"Certificado não encontrado! Verifique se 'certificado.pfx' está em src/main/resources/certificado/ ou em /app/certificado/");
+		}
+
 		KeyStore ks = KeyStore.getInstance("pkcs12");
 		try {
 			ks.load(entrada, senha.toCharArray());
 		} catch (IOException e) {
-			throw new Exception("Senha do Certificado Digital incorreta ou Certificado inválido.");
+			throw new Exception("Senha incorreta ou certificado inválido.", e);
+		} finally {
+			if (entrada != null)
+				entrada.close();
 		}
 
 		KeyStore.PrivateKeyEntry pkEntry = null;
 		Enumeration<String> aliasesEnum = ks.aliases();
 		while (aliasesEnum.hasMoreElements()) {
-			String alias = (String) aliasesEnum.nextElement();
+			String alias = aliasesEnum.nextElement();
 			if (ks.isKeyEntry(alias)) {
 				pkEntry = (KeyStore.PrivateKeyEntry) ks.getEntry(alias,
 						new KeyStore.PasswordProtection(senha.toCharArray()));
@@ -128,12 +144,15 @@ public class AssinaXML {
 			}
 		}
 
+		if (pkEntry == null) {
+			throw new Exception("Nenhuma chave privada encontrada no certificado.");
+		}
+
 		X509Certificate cert = (X509Certificate) pkEntry.getCertificate();
-		System.out.println("Data Certificado " + cert.getNotAfter());
+		System.out.println("Data Validade Certificado: " + cert.getNotAfter());
 
 		KeyInfoFactory keyInfoFactory = signatureFactory.getKeyInfoFactory();
-		List<X509Certificate> x509Content = new ArrayList<X509Certificate>();
-
+		List<X509Certificate> x509Content = new ArrayList<>();
 		x509Content.add(cert);
 		X509Data x509Data = keyInfoFactory.newX509Data(x509Content);
 		keyInfo = keyInfoFactory.newKeyInfo(Collections.singletonList(x509Data));
