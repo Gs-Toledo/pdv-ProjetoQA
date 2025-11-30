@@ -14,10 +14,12 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
-import org.openqa.selenium.chrome.ChromeOptions;
+
+import io.github.bonigarcia.wdm.WebDriverManager;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class ProdutoSistemaTest {
@@ -28,12 +30,11 @@ public class ProdutoSistemaTest {
 
     @BeforeEach
     public void setUp() {
+        WebDriverManager.chromedriver().setup();
+
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless");
-        options.addArguments("--no-sandbox");
-        options.addArguments("--disable-dev-shm-usage");
-        options.addArguments("--disable-gpu");
-        options.addArguments("--window-size=1920,1080");
+        options.addArguments("--remote-allow-origins=*");
+        options.addArguments("--start-maximized");
 
         driver = new ChromeDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(10));
@@ -90,7 +91,6 @@ public class ProdutoSistemaTest {
 
         driver.findElement(By.id("ncm")).sendKeys("22021000");
         driver.findElement(By.id("cest")).sendKeys("0300100");
-
         driver.findElement(By.name("enviar")).click();
 
         WebElement mensagemSucesso = wait.until(ExpectedConditions.visibilityOfElementLocated(By.className("alert-success")));
@@ -138,14 +138,12 @@ public class ProdutoSistemaTest {
 
         driver.findElement(By.id("valorCusto")).sendKeys("10,00");
         driver.findElement(By.id("valorVenda")).sendKeys("20,00");
-
         driver.findElement(By.name("enviar")).click();
 
         assertTrue(driver.getCurrentUrl().contains("/produto"), "Deveria permanecer na página de produto");
 
         driver.findElement(By.id("descricao")).sendKeys("AA");
         driver.findElement(By.name("enviar")).click();
-
     }
 
     @Test
@@ -153,9 +151,7 @@ public class ProdutoSistemaTest {
     public void testF_PROD_004_ConsultaProduto() {
         driver.get(baseUrl + "/produto");
 
-        WebElement campoBusca = driver.findElement(By.id("descricao"));
-        if(campoBusca == null) campoBusca = driver.findElement(By.name("descricao"));
-
+        WebElement campoBusca = driver.findElement(By.name("descricao"));
         campoBusca.clear();
         campoBusca.sendKeys("COLA");
 
