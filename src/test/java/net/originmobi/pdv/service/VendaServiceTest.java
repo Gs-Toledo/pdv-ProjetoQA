@@ -13,10 +13,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
+import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -357,8 +354,8 @@ class VendaServiceTest {
                     codVenda,
                     1L,
                     100.0,
-                    0.0,
-                    0.0,
+                    10.0,
+                    4.0,
                     new String[]{"100"},
                     new String[]{"10"}
             );
@@ -369,7 +366,96 @@ class VendaServiceTest {
             verify(lancamentos).lancamento(any(CaixaLancamento.class));
             verify(cartaoLancamento, never()).lancamento(anyDouble(), any());
             verify(produtos).movimentaEstoque(codVenda, EntradaSaida.SAIDA);
+
+            ArgumentCaptor<Double> capVlFinal = ArgumentCaptor.forClass(Double.class);
+
+            verify(vendas).fechaVenda(
+                    eq(1L),
+                    eq(VendaSituacao.FECHADA),
+                    capVlFinal.capture(),
+                    anyDouble(),
+                    anyDouble(),
+                    any(Timestamp.class),
+                    any(PagamentoTipo.class)
+            );
+
+            assertEquals(100.0 - 10.0 + 4.0, capVlFinal.getValue());
         }
+    }
+
+    @Test
+    @DisplayName("Teste de Mutação: Garante que a lógica funciona sem descontos e acréscimos")
+    void deveFecharVendaSemDescontoNemAcrescimo() {
+        Long codVenda = 1L;
+        double valorProdutos = 100.0;
+        double desconto = 0.0;
+        double acrescimo = 0.0;
+        double totalEsperado = 100.0;
+
+        Venda venda = criarVendaMock(true);
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("00");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+
+        Titulo titulo = new Titulo();
+        titulo.setTipo(new TituloTipo());
+        titulo.getTipo().setSigla("DIN");
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(titulo));
+
+        when(caixas.caixaIsAberto()).thenReturn(true);
+        when(caixas.caixaAberto()).thenReturn(Optional.of(new Caixa()));
+
+        try (MockedStatic<Aplicacao> aplicacaoStatic = Mockito.mockStatic(Aplicacao.class)) {
+            Aplicacao appInstancia = mock(Aplicacao.class);
+            aplicacaoStatic.when(Aplicacao::getInstancia).thenReturn(appInstancia);
+            when(appInstancia.getUsuarioAtual()).thenReturn("user_test");
+            when(usuarios.buscaUsuario("user_test")).thenReturn(new Usuario());
+
+            service.fechaVenda(codVenda, 1L, valorProdutos, desconto, acrescimo, new String[]{"100"}, new String[]{"1"});
+        }
+
+        verify(vendas).fechaVenda(eq(codVenda), eq(VendaSituacao.FECHADA), eq(totalEsperado), eq(0.0), eq(0.0), any(), any());
+    }
+
+    @Test
+    @DisplayName("Teste de mutação: Valida cálculo reverso do valor bruto")
+    void deveConsiderarDescontoNoCalculoDoValorBruto() {
+        Long codVenda = 1L;
+
+        double valorProdutos = 100.0;
+        double desconto = 10.0;
+        double acrescimo = 4.0;
+
+        Venda venda = criarVendaMock(true);
+        venda.setPessoa(new Pessoa());
+        when(vendas.findByCodigoEquals(codVenda)).thenReturn(venda);
+
+        PagamentoTipo pagTipo = new PagamentoTipo();
+        pagTipo.setFormaPagamento("30/60/90");
+        when(formaPagamentos.busca(anyLong())).thenReturn(pagTipo);
+        when(tituloService.busca(anyLong())).thenReturn(Optional.of(new Titulo()));
+
+        service.fechaVenda(codVenda, 1L, valorProdutos, desconto, acrescimo,
+                new String[]{"30", "30", "30"},
+                new String[]{"1", "1", "1"});
+
+        ArgumentCaptor<Double> captorTotalBruto = ArgumentCaptor.forClass(Double.class);
+
+        verify(parcelas, times(3)).gerarParcela(
+                captorTotalBruto.capture(),
+                anyDouble(),
+                anyDouble(),
+                anyDouble(),
+                anyDouble(),
+                any(), anyInt(), anyInt(), any(), any()
+        );
+
+        double somaTotalBruto = captorTotalBruto.getAllValues().stream().mapToDouble(Double::doubleValue).sum();
+
+        assertEquals(96.0, somaTotalBruto, 0.001,
+                "O cálculo do valor bruto está incorreto. O desconto provavelmente não foi aplicado na matemática reversa.");
     }
 
     @Test
@@ -399,8 +485,8 @@ class VendaServiceTest {
                         codVenda,
                         1L,
                         100.0,
-                        0.0,
-                        0.0,
+                        10.0,
+                        4.0,
                         new String[]{"100"},
                         new String[]{"1"}
                 )
@@ -430,8 +516,8 @@ class VendaServiceTest {
                 codVenda,
                 1L,
                 100.0,
-                0.0,
-                0.0,
+                10.0,
+                4.0,
                 new String[]{"100"},
                 new String[]{"20"});
 
@@ -460,8 +546,8 @@ class VendaServiceTest {
                 codVenda,
                 1L,
                 100.0,
-                0.0,
-                0.0,
+                10.0,
+                4.0,
                 new String[]{"100"},
                 new String[]{"20"});
 
@@ -490,8 +576,8 @@ class VendaServiceTest {
                 codVenda,
                 1L,
                 100.0,
-                0.0,
-                0.0,
+                10.0,
+                4.0,
                 new String[]{"100"},
                 new String[]{"99"});
 
@@ -522,8 +608,8 @@ class VendaServiceTest {
                         codVenda,
                         1L,
                         100.0,
-                        0.0,
-                        0.0,
+                        10.0,
+                        4.0,
                         new String[]{"100"},
                         new String[]{"1"}
                 )
@@ -531,7 +617,6 @@ class VendaServiceTest {
 
         assertEquals("Venda sem cliente, verifique", ex.getMessage());
     }
-
 
 
     @Test
@@ -555,8 +640,8 @@ class VendaServiceTest {
                 codVenda,
                 1L,
                 100.0,
-                0.0,
-                0.0,
+                10.0,
+                4.0,
                 new String[]{"50", "50"},
                 new String[]{"1", "1"}
         );
@@ -639,8 +724,8 @@ class VendaServiceTest {
                         codVenda,
                         1L,
                         100.0,
-                        0.0,
-                        0.0,
+                        10.0,
+                        4.0,
                         new String[]{"100"},
                         new String[]{"20"}
                 )
@@ -673,7 +758,7 @@ class VendaServiceTest {
         when(tituloService.busca(anyLong())).thenReturn(Optional.of(new Titulo()));
 
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{""}, new String[]{"1"})
+                service.fechaVenda(1L, 1L, 100.0, 10.0, 4.0, new String[]{""}, new String[]{"1"})
         );
 
         assertEquals("valor de recebimento invalido", ex.getMessage());
@@ -697,7 +782,7 @@ class VendaServiceTest {
         );
 
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{"100"}, new String[]{"1"})
+                service.fechaVenda(1L, 1L, 100.0, 10.0, 4.0, new String[]{"100"}, new String[]{"1"})
         );
 
         assertNull(ex.getMessage());
@@ -721,7 +806,7 @@ class VendaServiceTest {
         when(caixas.caixaIsAberto()).thenReturn(true);
 
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{""}, new String[]{"1"})
+                service.fechaVenda(1L, 1L, 100.0, 10.0, 4.0, new String[]{""}, new String[]{"1"})
         );
 
         assertEquals("Parcela sem valor, verifique", ex.getMessage());
@@ -753,7 +838,7 @@ class VendaServiceTest {
             doThrow(new RuntimeException("Erro SQL")).when(lancamentos).lancamento(any(CaixaLancamento.class));
 
             RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                    service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{"100"}, new String[]{"1"})
+                    service.fechaVenda(1L, 1L, 100.0, 10.0, 4.0, new String[]{"100"}, new String[]{"1"})
             );
 
             assertEquals("Erro ao fechar a venda, chame o suporte", ex.getMessage());
@@ -783,8 +868,8 @@ class VendaServiceTest {
                         codVenda,
                         1L,
                         100.0,
-                        0.0,
-                        0.0,
+                        10.0,
+                        4.0,
                         new String[]{"100"},
                         new String[]{"1"}
                 )
@@ -805,8 +890,8 @@ class VendaServiceTest {
                 service.fechaVenda(1L,
                         1L,
                         100.0,
-                        0.0,
-                        0.0,
+                        10.0,
+                        4.0,
                         new String[]{},
                         new String[]{})
         );
@@ -814,7 +899,7 @@ class VendaServiceTest {
     }
 
     @Test
-    @DisplayName("Erro: Valor das parcelas não bate com total (Dinheiro)")
+    @DisplayName("Erro: Valor das parcelas diferente do total (Testes de Mutação < e >)")
     void deveLancarErroSeValorParcelasIncorreto() {
         Venda venda = criarVendaMock(true);
         when(vendas.findByCodigoEquals(1L)).thenReturn(venda);
@@ -829,11 +914,17 @@ class VendaServiceTest {
         t.getTipo().setSigla("DIN");
         when(tituloService.busca(anyLong())).thenReturn(Optional.of(t));
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () ->
-                service.fechaVenda(1L, 1L, 100.0, 0.0, 0.0, new String[]{"90"}, new String[]{"1"})
+        RuntimeException exMenor = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(1L, 1L, 100.00, 10.0, 4.0, new String[]{"10.00"}, new String[]{"1"})
+        );
+        assertEquals("Valor das parcelas diferente do valor total de produtos, verifique", exMenor.getMessage());
+
+        RuntimeException exMaior = assertThrows(RuntimeException.class, () ->
+                service.fechaVenda(1L, 1L, 100.00, 10.0, 4.0, new String[]{"500.00"}, new String[]{"1"})
         );
 
-        assertEquals("Valor das parcelas diferente do valor total de produtos, verifique", ex.getMessage());
+        assertNotNull(exMaior.getMessage());
+        assertEquals("Valor das parcelas diferente do valor total de produtos, verifique", exMaior.getMessage());
     }
 
     @Test
