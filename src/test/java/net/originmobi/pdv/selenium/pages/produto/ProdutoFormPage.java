@@ -11,7 +11,6 @@ public class ProdutoFormPage {
 
     private WebDriver driver;
     private WebDriverWait wait;
-
     private By formProduto = By.id("form_produto");
     private By descricaoField = By.id("descricao");
     private By fornecedorSelect = By.id("fornecedor");
@@ -27,6 +26,8 @@ public class ProdutoFormPage {
     private By stSelect = By.id("st");
     private By ncmField = By.id("ncm");
     private By cestField = By.id("cest");
+    private By tributacaoSelect = By.id("tributacao");
+    private By modBcSelect = By.id("modbc");
     private By codigoField = By.id("codigo");
     private By btnEnviar = By.name("enviar");
     private By mensagemSucesso = By.className("alert-success");
@@ -41,8 +42,6 @@ public class ProdutoFormPage {
         try {
             wait.until(ExpectedConditions.presenceOfElementLocated(formProduto));
             wait.until(ExpectedConditions.presenceOfElementLocated(fornecedorSelect));
-            wait.until(ExpectedConditions.presenceOfElementLocated(categoriaSelect));
-            wait.until(ExpectedConditions.presenceOfElementLocated(grupoSelect));
             return true;
         } catch (Exception e) {
             return false;
@@ -63,6 +62,14 @@ public class ProdutoFormPage {
 
     public void selecionarGrupo(int indice) {
         selecionarOpcaoSegura(grupoSelect, indice);
+    }
+
+    public void selecionarTributacao(int indice) {
+        selecionarOpcaoSegura(tributacaoSelect, indice);
+    }
+
+    public void selecionarModalidadeBC(int indice) {
+        selecionarOpcaoSegura(modBcSelect, indice);
     }
 
     public void preencherValorCusto(String valor) {
@@ -104,7 +111,7 @@ public class ProdutoFormPage {
     }
 
     public void configurarST(int indice) {
-        new Select(driver.findElement(stSelect)).selectByIndex(indice);
+        selecionarOpcaoSegura(stSelect, indice);
     }
 
     public void submeterFormulario() {
@@ -153,6 +160,8 @@ public class ProdutoFormPage {
         configurarST(1);
         preencherNCM("22021000");
         preencherCEST("0300100");
+        selecionarTributacao(1);
+        selecionarModalidadeBC(1);
         submeterFormulario();
 
         try {
@@ -161,21 +170,24 @@ public class ProdutoFormPage {
                             mensagemSucessoExibida()
             );
         } catch (Exception e) {
-            System.out.println("Aviso: Não foi possível confirmar o cadastro imediatamente.");
+            System.out.println("Aviso: Time-out aguardando confirmação de cadastro.");
         }
     }
 
     private void selecionarOpcaoSegura(By elementLocator, int indicePreferencial) {
         WebElement element = driver.findElement(elementLocator);
         Select select = new Select(element);
+        int tamanho = select.getOptions().size();
 
-        if (select.getOptions().size() > indicePreferencial) {
-            select.selectByIndex(indicePreferencial);
-        } else if (select.getOptions().size() > 0) {
-            select.selectByIndex(0);
-            System.out.println("Aviso: Opção " + indicePreferencial + " não existe. Selecionado índice 0.");
+        if (tamanho <= indicePreferencial) {
+            if (tamanho > 0) {
+                select.selectByIndex(0);
+                System.out.println("Aviso: Dropdown " + elementLocator + " sem índice " + indicePreferencial + ". Usando índice 0.");
+            } else {
+                throw new RuntimeException("ERRO DE DADOS: O Dropdown " + elementLocator + " está totalmente vazio!");
+            }
         } else {
-            System.out.println("Erro: O combo box está totalmente vazio!");
+            select.selectByIndex(indicePreferencial);
         }
     }
 }
