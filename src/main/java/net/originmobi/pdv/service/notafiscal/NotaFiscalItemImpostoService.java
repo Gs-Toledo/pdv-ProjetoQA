@@ -1,9 +1,10 @@
 package net.originmobi.pdv.service.notafiscal;
 
+import net.originmobi.pdv.dto.ImpostoDTO;
+import net.originmobi.pdv.exceptions.CalculoImpostoException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import net.originmobi.pdv.model.Cst;
 import net.originmobi.pdv.model.NotaFiscalItemImposto;
 import net.originmobi.pdv.model.TributacaoRegra;
 import net.originmobi.pdv.repository.notafiscal.NotaFiscalItemImpostoRepository;
@@ -18,68 +19,85 @@ public class NotaFiscalItemImpostoService {
 		impostos.save(imposto);
 	}
 
-	public NotaFiscalItemImposto merger(Long codimposto, char origin, String cst_cofins, int modBcIcms, Double bc_icms,
-			Double aliq_icms, Double vlIcms, String cst_pis, Double bc_pis, Double pis, Double vlPis, Double bc_cofins,
-			Double aliqCofins, Double vlCofins, int cst, int cst_ipi, Double vbc_ipi, Double p_ipi, Double v_ipi) {
+    public NotaFiscalItemImposto merger(ImpostoDTO impostoDTO) {
+        int orig = Character.getNumericValue(impostoDTO.getOrigin());
+        int vlCstCofins = Integer.parseInt(impostoDTO.getCstCofins());
+        int vlCstPis = Integer.parseInt(impostoDTO.getCstPis());
 
-		String x = Character.toString(origin);
-		Integer orig = Integer.parseInt(x);
+        NotaFiscalItemImposto imposto = new NotaFiscalItemImposto(
+                orig,
+                vlCstCofins,
+                impostoDTO.getModBcIcms(),
+                impostoDTO.getBcIcms(),
+                impostoDTO.getAliqIcms(),
+                impostoDTO.getVlIcms(),
+                vlCstPis,
+                impostoDTO.getBcPis(),
+                impostoDTO.getPis(),
+                impostoDTO.getVlPis(),
+                impostoDTO.getBcCofins(),
+                impostoDTO.getAliqCofins(),
+                impostoDTO.getVlCofins(),
+                impostoDTO.getCst(),
+                impostoDTO.getCstIpi(),
+                impostoDTO.getVbcIpi(),
+                impostoDTO.getpIpi(),
+                impostoDTO.getvIpi()
+        );
 
-		int vlCst_cofins = Integer.parseInt(cst_cofins);
-		int vlCst_pis = Integer.parseInt(cst_pis);
+        if (impostoDTO.getCodImposto() != null) {
+            imposto.setCodigo(impostoDTO.getCodImposto());
+        }
 
-		NotaFiscalItemImposto imposto = new NotaFiscalItemImposto(orig, vlCst_cofins, modBcIcms, bc_icms, aliq_icms,
-				vlIcms, vlCst_pis, bc_pis, pis, vlPis, bc_cofins, aliqCofins, vlCofins, cst, cst_ipi, vbc_ipi, p_ipi,
-				v_ipi);
+        try {
+            impostos.save(imposto);
+        } catch (Exception e) {
+            throw new CalculoImpostoException("Erro ao lançar impostos na nota, chame o suporte");
+        }
 
-		// se o código for diferente de null, se trata de uma atualização
-		if (codimposto != null)
-			imposto.setCodigo(codimposto);
+        return imposto;
+    }
 
-		try {
-			impostos.save(imposto);
-		} catch (Exception e) {
-			System.out.println(e);
-			throw new RuntimeException("Erro ao lançar impostos na nota, chame o suporte");
-		}
+    public NotaFiscalItemImposto calcula(Long codimposto, Double vlTotal, TributacaoRegra regra, char origin, int modBcIcms) {
 
-		return imposto;
-	}
+        ImpostoDTO dto = new ImpostoDTO();
+        dto.setCodImposto(codimposto);
+        dto.setOrigin(origin);
+        dto.setModBcIcms(modBcIcms);
 
-	public NotaFiscalItemImposto calcula(Long codimposto, Double vlTotal, TributacaoRegra regra, char origin,
-			int modBcIcms) {
-		int cst_csosn = Integer.parseInt(regra.getCst_csosn().getCst_csosn());
-		Cst cst_cofins = regra.getCst_cofins();
-		String cst_pis = regra.getCst_pis().getCst();
-		
-		Double bc_icms = vlTotal;
-		Double aliq_icms = regra.getAliq_icms();
-		Double vlIcms = (vlTotal * aliq_icms) / 100;
+        int cst = Integer.parseInt(regra.getCst_csosn().getCst_csosn());
+        dto.setCst(cst);
+        dto.setCstCofins(regra.getCst_cofins().getCst());
+        dto.setCstPis(regra.getCst_pis().getCst());
 
-		Double bc_pis = vlTotal;
-		Double pis = regra.getPis();
-		Double vlPis = (bc_pis * pis) / 100;
+        dto.setBcIcms(vlTotal);
+        dto.setAliqIcms(regra.getAliq_icms());
+        dto.setVlIcms((vlTotal * dto.getAliqIcms()) / 100);
 
-		Double bc_cofins = vlTotal;
-		Double aliqCofins = regra.getCofins();
-		Double vlCofins = (bc_cofins * aliqCofins) / 100;
+        dto.setBcPis(vlTotal);
+        dto.setPis(regra.getPis());
 
-		int cst_ipi = Integer.parseInt(regra.getCst_ipi().getCst());
-		Double bcIPI = vlTotal;
-		Double aliqIPI = regra.getAliq_ipi();
-		Double vlIPI = (bcIPI * aliqIPI) / 100;
+        Double calcVlPis = (dto.getBcPis() * dto.getPis()) / 100;
+        dto.setVlPis(calcVlPis);
 
-		// cadastra os impostos do produto
-		NotaFiscalItemImposto imposto = null;
-		try {
-			imposto = merger(codimposto, origin, cst_cofins.getCst(), modBcIcms, bc_icms, aliq_icms, vlIcms, cst_pis,
-					bc_pis, pis, vlPis, bc_cofins, aliqCofins, vlCofins, cst_csosn, cst_ipi, bcIPI, aliqIPI, vlIPI);
-		} catch (Exception e) {
-			System.out.println(e);
-			throw new RuntimeException("erro ao calcular os impostos da nota");
-		}
+        dto.setBcCofins(vlTotal);
+        dto.setAliqCofins(regra.getCofins());
 
-		return imposto;
-	}
+        Double calcVlCofins = (dto.getBcCofins() * dto.getAliqCofins()) / 100;
+        dto.setVlCofins(calcVlCofins);
+
+        dto.setCstIpi(Integer.parseInt(regra.getCst_ipi().getCst()));
+        dto.setVbcIpi(vlTotal);
+        dto.setpIpi(regra.getAliq_ipi());
+
+        Double calcVIpi = (dto.getVbcIpi() * dto.getpIpi()) / 100;
+        dto.setvIpi(calcVIpi);
+
+        try {
+            return merger(dto);
+        } catch (Exception e) {
+            throw new CalculoImpostoException("Erro ao calcular os impostos da nota", e);
+        }
+    }
 
 }
