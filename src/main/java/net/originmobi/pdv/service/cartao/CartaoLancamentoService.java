@@ -18,6 +18,7 @@ import net.originmobi.pdv.enumerado.caixa.EstiloLancamento;
 import net.originmobi.pdv.enumerado.caixa.TipoLancamento;
 import net.originmobi.pdv.enumerado.cartao.CartaoSituacao;
 import net.originmobi.pdv.enumerado.cartao.CartaoTipo;
+import net.originmobi.pdv.exceptions.CartaoLancamentoException;
 import net.originmobi.pdv.filter.CartaoFilter;
 import net.originmobi.pdv.model.Caixa;
 import net.originmobi.pdv.model.CaixaLancamento;
@@ -120,10 +121,10 @@ public List<CartaoLancamento> listar(CartaoFilter filter) {
 	public String processar(CartaoLancamento cartaoLancamento) {
 
 		if (cartaoLancamento.getSituacao().equals(CartaoSituacao.PROCESSADO))
-			throw new RuntimeException("Registro já processado");
+			throw new CartaoLancamentoException("Registro já processado");
 
 		if (cartaoLancamento.getSituacao().equals(CartaoSituacao.ANTECIPADO))
-			throw new RuntimeException("Registro já foi antecipado");
+			throw new CartaoLancamentoException("Registro já foi antecipado");
 
 		Double valor = cartaoLancamento.getVlLiqParcela();
 		TipoLancamento tipo = TipoLancamento.RECEBIMENTO;
@@ -139,24 +140,24 @@ public List<CartaoLancamento> listar(CartaoFilter filter) {
 		try {
 			caixaLancamentos.lancamento(lancamento);
 		} catch (Exception e) {
-			throw new RuntimeException("Erro ao tentar realizar o processamento, chame o suporte");
+			throw new CartaoLancamentoException("Erro ao tentar realizar o processamento, chame o suporte");
 		}
 
 		try {
 			cartaoLancamento.setSituacao(CartaoSituacao.PROCESSADO);
 		} catch (Exception e) {
-			throw new RuntimeException("Erro ao tentar realizar o processamento, chame o suporte");
+			throw new CartaoLancamentoException("Erro ao tentar realizar o processamento, chame o suporte");
 		}
-
+ 
 		return "Processamento realizado com sucesso";
 	}
 
 	public String antecipar(CartaoLancamento cartaoLancamento) {
 		if (cartaoLancamento.getSituacao().equals(CartaoSituacao.PROCESSADO))
-			throw new RuntimeException("Registro já processado");
+			throw new CartaoLancamentoException("Registro já processado");
 
 		if (cartaoLancamento.getSituacao().equals(CartaoSituacao.ANTECIPADO))
-			throw new RuntimeException("Registro já foi antecipado");
+			throw new CartaoLancamentoException("Registro já foi antecipado");
 
 		Double valor = cartaoLancamento.getVlLiqAntecipacao();
 		TipoLancamento tipo = TipoLancamento.RECEBIMENTO;
@@ -173,14 +174,14 @@ public List<CartaoLancamento> listar(CartaoFilter filter) {
 		try {
 			caixaLancamentos.lancamento(lancamento);
 		} catch (Exception e) {
-			throw new RuntimeException("Erro ao tentar realizar a antecipação, chame o suporte");
+			throw new CartaoLancamentoException("Erro ao tentar realizar a antecipação, chame o suporte");
 		}
 
 		try {
 			cartaoLancamento.setSituacao(CartaoSituacao.ANTECIPADO);
 			repository.save(cartaoLancamento);
 		} catch (Exception e) {
-			throw new RuntimeException("Erro ao tentar realizar a antecipação, chame o suporte");
+			throw new CartaoLancamentoException("Erro ao tentar realizar a antecipação, chame o suporte");
 		}
 
 		return "Antecipação realizada com sucesso";
