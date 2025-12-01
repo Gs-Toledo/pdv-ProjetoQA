@@ -1,11 +1,12 @@
 package net.originmobi.pdv.service;
 
-import java.text.DecimalFormat;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,114 +27,129 @@ import net.originmobi.pdv.utilitarios.DataAtual;
 @Service
 public class PagarService {
 
-	@Autowired
-	private PagarRepository pagarRepo;
+    private static final Logger logger = LoggerFactory.getLogger(PagarService.class);
 
-	@Autowired
-	private PagarParcelaService pagarParcelaServ;
+    private final PagarRepository pagarRepo;
+    private final PagarParcelaService pagarParcelaServ;
+    private final FornecedorService fornecedores;
+    private final CaixaService caixas;
+    private final UsuarioService usuarios;
+    private final CaixaLancamentoService lancamentos;
 
-	@Autowired
-	private FornecedorService fornecedores;
+    public PagarService(PagarRepository pagarRepo, PagarParcelaService pagarParcelaServ,
+                        FornecedorService fornecedores, CaixaService caixas, 
+                        UsuarioService usuarios, CaixaLancamentoService lancamentos) {
+        this.pagarRepo = pagarRepo;
+        this.pagarParcelaServ = pagarParcelaServ;
+        this.fornecedores = fornecedores;
+        this.caixas = caixas;
+        this.usuarios = usuarios;
+        this.lancamentos = lancamentos;
+    }
 
-	@Autowired
-	private CaixaService caixas;
+    public List<Pagar> listar() {
+        return pagarRepo.findAll();
+    }
 
-	@Autowired
-	private UsuarioService usuarios;
+    @Transactional(propagation = Propagation.REQUIRED)
+    public String cadastrar(Long codFornecedor, Double valor, String obs, LocalDate vencimento, PagarTipo tipo) {
+        LocalDate dataAtual = LocalDate.now();
+        DataAtual dataTime = new DataAtual();
 
-	@Autowired
-	private CaixaLancamentoService lancamentos;
+        String observacaoFinal = (obs == null || obs.isEmpty()) ? tipo.getDescricao() : obs;
 
-	public List<Pagar> listar() {
-		return pagarRepo.findAll();
-	}
+        Fornecedor fornecedor = fornecedores.busca(codFornecedor)
+                .orElseThrow(() -> new RuntimeException("Fornecedor não encontrado"));
 
-	@Transactional(readOnly = false, propagation = Propagation.REQUIRED)
-	public String cadastrar(Long codFornecedor, Double valor, String obs, LocalDate vencimento, PagarTipo tipo) {
-		LocalDate dataAtual = LocalDate.now();
-		DataAtual dataTime = new DataAtual();
+        Pagar pagar = new Pagar(observacaoFinal, valor, dataAtual, fornecedor, tipo);
 
-		obs = obs.isEmpty() ? tipo.getDescricao() : obs;
+        try {
+            pagarRepo.save(pagar);
+        } catch (Exception e) {
+            logger.error("Erro ao salvar despesa", e);
+            throw new RuntimeException("Erro ao lançar despesa, chame o suporte", e);
+        }
 
-		Optional<Fornecedor> OptionaFornecedor = fornecedores.busca(codFornecedor);
-		Fornecedor fornecedor = OptionaFornecedor.get();
+        try {
+            pagarParcelaServ.cadastrar(valor, valor, 0, dataTime.dataAtualTimeStamp(), vencimento, pagar);
+        } catch (Exception e) {
+            logger.error("Erro ao cadastrar parcela", e);
+            throw new RuntimeException("Erro ao lançar despesa (parcela), chame o suporte", e);
+        }
 
-		Pagar pagar = new Pagar(obs, valor, dataAtual, fornecedor, tipo);
+        return "Despesa lançada com sucesso";
+    }
 
-		try {
-			pagarRepo.save(pagar);
-		} catch (Exception e) {
-			e.getMessage();
-			throw new RuntimeException("Erro ao lançar despesa, chame o suporte");
-		}
+    @Transactional(propagation = Propagation.REQUIRED)
+    public String quitar(Long codparcela, Double vlPago, Double vldesc, Double vlacre, Long codCaixa) {
 
-		try {
-			pagarParcelaServ.cadastrar(valor, valor, 0, dataTime.dataAtualTimeStamp(), vencimento, pagar);
-		} catch (Exception e) {
-			e.getStackTrace();
-			throw new RuntimeException("Erro ao lançar despesa, chame o suporte");
-		}
+        PagarParcela parcela = pagarParcelaServ.busca(codparcela)
+                .orElseThrow(() -> new RuntimeException("Parcela não encontrada"));
 
-		return "Despesa lançada com sucesso";
-	}
+        Double valorRestanteNaParcela = round(parcela.getValor_restante());
+        
+        if (vlPago > valorRestanteNaParcela) {
+            throw new RuntimeException("Valor de pagamento inválido. O valor pago excede o restante.");
+        }
 
-	@Transactional(readOnly = false, propagation = Propagation.REQUIRED)
-	public String quitar(Long codparcela, Double vlPago, Double vldesc, Double vlacre, Long codCaixa) {
+        Double vlPagoAtual = parcela.getValor_pago() != null ? parcela.getValor_pago() : 0.0;
+        Double vlDescontoAtual = parcela.getValor_desconto() != null ? parcela.getValor_desconto() : 0.0;
+        Double vlAcrescimoAtual = parcela.getValor_acrescimo() != null ? parcela.getValor_acrescimo() : 0.0;
 
-		Optional<PagarParcela> parcela = pagarParcelaServ.busca(codparcela);
+        Double vlquitado = (vlPago + vlacre) + vlPagoAtual;
+        Double novoVlRestante = valorRestanteNaParcela - (vlPago + vldesc);
+        Double vlDesconto = vlDescontoAtual + vldesc;
+        Double vlAcrescimo = vlAcrescimoAtual + vlacre;
 
-		DecimalFormat df = new DecimalFormat("#0.00");
+        novoVlRestante = novoVlRestante < 0 ? 0.0 : round(novoVlRestante);
 
-		if (vlPago > Double.valueOf(df.format(parcela.map(PagarParcela::getValor_restante).get()).replace(",", ".")))
-			throw new RuntimeException("Valor de pagamento inválido");
+        int quitado = novoVlRestante <= 0 ? 1 : 0;
 
-		Double vlquitado = (vlPago + vlacre) + parcela.map(PagarParcela::getValor_pago).get();
-		Double vlRestante = (parcela.map(PagarParcela::getValor_restante).get() - (vlPago + vldesc));
-		Double vlDesconto = parcela.map(PagarParcela::getValor_desconto).get() + vldesc;
-		Double vlAcrescimo = parcela.map(PagarParcela::getValor_acrescimo).get() + vlacre;
+        DataAtual dataAtual = new DataAtual();
 
-		vlRestante = vlRestante < 0 ? 0.0 : vlRestante;
+        parcela.setValor_pago(vlquitado);
+        parcela.setValor_restante(novoVlRestante);
+        parcela.setValor_desconto(vlDesconto);
+        parcela.setValor_acrescimo(vlAcrescimo);
+        parcela.setQuitado(quitado);
+        parcela.setData_pagamento(dataAtual.dataAtualTimeStamp());
 
-		int quitado = Double.valueOf(df.format(vlRestante).replace(",", ".")) <= 0 ? 1 : 0;
+        try {
+            pagarParcelaServ.merger(parcela);
+        } catch (Exception e) {
+            logger.error("Erro ao realizar merge da parcela", e);
+            throw new RuntimeException("Ocorreu um erro ao realizar o pagamento, chame o suporte", e);
+        }
 
-		DataAtual dataAtual = new DataAtual();
+        Aplicacao aplicacao = Aplicacao.getInstancia();
+        Usuario usuario = usuarios.buscaUsuario(aplicacao.getUsuarioAtual());
+        
+        Caixa caixa = caixas.busca(codCaixa)
+                .orElseThrow(() -> new RuntimeException("Caixa não encontrado"));
 
-		parcela.get().setValor_pago(vlquitado);
-		parcela.get().setValor_restante(vlRestante);
-		parcela.get().setValor_desconto(vlDesconto);
-		parcela.get().setValor_acrescimo(vlAcrescimo);
-		parcela.get().setQuitado(quitado);
-		parcela.get().setData_pagamento(dataAtual.dataAtualTimeStamp());
+        if ((vlPago + vlacre) > caixa.getValor_total()) {
+            throw new RuntimeException("Saldo insuficiente para realizar este pagamento");
+        }
 
-		try {
-			pagarParcelaServ.merger(parcela.get());
-		} catch (Exception e) {
-			e.getMessage();
-			throw new RuntimeException("Ocorreu um erro ao realizar o pagamento, chame o suporte");
-		}
+        try {
+            CaixaLancamento lancamento = new CaixaLancamento("Referente a pagamento de despesas", 
+                    vlPago + vlacre, TipoLancamento.PAGAMENTO, EstiloLancamento.SAIDA, caixa, usuario);
 
-		Aplicacao aplicacao = Aplicacao.getInstancia();
+            lancamento.setParcelaPagar(parcela);
+            lancamentos.lancamento(lancamento);
+            
+        } catch (Exception e) {
+            logger.error("Erro ao realizar lançamento no caixa", e);
+            throw new RuntimeException("Ocorreu um erro ao realizar o pagamento no caixa, chame o suporte", e);
+        }
 
-		Usuario usuario = usuarios.buscaUsuario(aplicacao.getUsuarioAtual());
-		Optional<Caixa> caixa = caixas.busca(codCaixa);
+        return "Pagamento realizado com sucesso";
+    }
 
-		if (vlPago + vlacre > caixa.map(Caixa::getValor_total).get())
-			throw new RuntimeException("Saldo insuficiente para realizar este pagamento");
-
-		try {
-			CaixaLancamento lancamento = new CaixaLancamento("Referente a pagamento de despesas", vlPago + vlacre,
-					TipoLancamento.PAGAMENTO, EstiloLancamento.SAIDA, caixa.get(), usuario);
-
-			// vincula a parcela do pagar ao caixa_lancametno
-			lancamento.setParcelaPagar(parcela.get());
-
-			lancamentos.lancamento(lancamento);
-		} catch (Exception e) {
-			e.getMessage();
-			throw new RuntimeException("Ocorreu um erro ao realizar o pagamento, chame o suporte");
-		}
-
-		return "Pagamento realizado com sucesso";
-	}
-
+    private Double round(Double value) {
+        if (value == null) return 0.0;
+        return BigDecimal.valueOf(value)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
 }
