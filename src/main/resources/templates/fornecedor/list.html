@@ -14,10 +14,12 @@
 			<h1 class="text-center">Fornecedores</h1>
 
 			<div id="btn-padrao">
-				<a th:href="@{/fornecedor/form}" class="btn btn-azul-padrao">Novo</a>
+				<a th:href="@{/fornecedor/form}" class="btn btn-azul-padrao" id="btn-novo-fornecedor">Novo</a>
+
 			</div>
 
-			<table class="table table-striped">
+			<table class="table table-striped" id="tabela-fornecedores">
+
 				<tbody>
 					<tr>
 						<td class="text-center">#</td>

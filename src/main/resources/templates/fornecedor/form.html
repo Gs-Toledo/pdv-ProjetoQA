@@ -9,7 +9,7 @@
 		<div class="col-md-11">
 			<div th:include="@{messagens/messageSuccess}"></div>
 
-			<h2>Fornecedor</h2>
+			<h2 id="titulo-form-fornecedor">Fornecedor</h2>
 
 			<div id="btn-padrao">
 				<a th:href="@{/fornecedor}" class="btn btn-azul-padrao"><span
@@ -141,7 +141,8 @@
 				</div>
 
 				<hr></hr>
-				<input type="submit" value="Salvar" class="btn btn-azul-padrao" />
+				<input type="submit" value="Salvar" class="btn btn-azul-padrao" id="btn-salvar-fornecedor" />
+
 			</form>
 		</div>
 	</div>
