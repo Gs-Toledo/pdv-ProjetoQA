@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   pdv-app:
     build: .
@@ -13,7 +15,7 @@ services:
     environment:
       - MAVEN_OPTS=-Xmx512m
     command: mvn spring-boot:run -Dspring-boot.run.jvmArguments="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"
-    
+
   pdv-db:
     image: mysql:8.0
     environment:
@@ -22,10 +24,30 @@ services:
       MYSQL_DATABASE: pdv
     ports:
       - "3307:3306"
-
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 30s
       timeout: 10s
       retries: 3
-    
+
+  sonarqube:
+    image: sonarqube:8.9-community
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/api/system/status" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
