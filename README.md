@@ -1,3 +1,11 @@
+#Links da Entrega do Trabalho:
+Relatório:
+https://docs.google.com/document/d/1-HTSL34HFOh3lIVD5cOovYlBIT1oY6nWF6ocYRycL1w/edit?tab=t.xf26y051cayj#heading=h.91t39drov929
+Casos de Teste:
+https://docs.google.com/document/d/1EmAXKb3CXfmrqRMeNc3-IYPYFGv85Mo3HZ4JMrDKnhQ/edit?tab=t.fdyl70fkar5i#heading=h.rbuoqsltif6d
+Apresentação:
+https://www.canva.com/design/DAG6O5a0p8U/RNZw8OJBkccf-3dfSGFBeA/edit?ui=eyJBIjp7fX0
+
 # pdv
 Sistema de ERP web desenvolvido em Java com Spring Framework
 
