@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   pdv-app:
@@ -20,7 +20,7 @@ services:
     image: mysql:8.0
     environment:
       MYSQL_ROOT_PASSWORD: 123456
-      MYSQL_ROOT_HOST: '%'
+      MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: pdv
     ports:
       - "3307:3306"
@@ -41,11 +41,20 @@ services:
       - sonarqube_extensions:/opt/sonarqube/extensions
       - sonarqube_logs:/opt/sonarqube/logs
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/api/system/status" ]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/system/status"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
+
+  maven-build:
+    image: maven:3.9-eclipse-temurin-8
+    working_dir: /app
+    volumes:
+      - .:/app
+      - ~/.m2:/root/.m2
+    depends_on:
+      - sonarqube
 
 volumes:
   sonarqube_data:

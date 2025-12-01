@@ -53,7 +53,7 @@ Nota: Aguarde cerca de 2 a 3 minutos após iniciar o Docker para que o servidor 
 Para rodar a verificação e enviar as métricas para o servidor, execute o comando abaixo no seu terminal (na raiz do projeto):
 
 ```sh
-  docker compose exec pdv-app mvn clean verify sonar:sonar \
+docker compose run --rm maven-build mvn clean verify sonar:sonar \
   -DskipTests \
   -Dsonar.host.url=http://sonarqube:9000 \
   -Dsonar.login=admin \
