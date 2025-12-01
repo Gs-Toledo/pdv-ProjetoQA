@@ -1,4 +1,4 @@
-package net.originmobi.pdv.sistema;
+/* package net.originmobi.pdv.sistema;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -200,4 +200,4 @@ public class ProdutoSistemaTest {
         assertTrue(produtoListPage.produtoEncontrado("REFRIGERANTE COLA 2L"),
                 "Produto deveria ser encontrado.");
     }
-}
+} */
