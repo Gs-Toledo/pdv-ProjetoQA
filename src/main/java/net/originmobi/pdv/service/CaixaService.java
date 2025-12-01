@@ -42,38 +42,31 @@ public class CaixaService {
     @Transactional(readOnly = false, propagation = Propagation.REQUIRED)
     public Long cadastro(Caixa caixa) {
         
-        // 1. Validações iniciais
         validarAbertura(caixa);
 
-        // 2. Prepara usuário e valores
         Aplicacao aplicacao = Aplicacao.getInstancia();
         Usuario usuarioLogado = usuarios.buscaUsuario(aplicacao.getUsuarioAtual());
 
         Double vlabertura = caixa.getValor_abertura() == null ? 0.0 : caixa.getValor_abertura();
         caixa.setValor_abertura(vlabertura);
 
-        // 3. Configurações do Objeto
         configurarDescricao(caixa);
+
         caixa.setUsuario(usuarioLogado);
         caixa.setData_cadastro(java.sql.Date.valueOf(LocalDate.now()));
 
         sanitizarDadosBanco(caixa);
 
-        // 4. Persistência
         try {
             caixas.save(caixa);
         } catch (Exception e) {
-            logger.error("Erro ao salvar caixa: {}", e.getMessage(), e);
             throw new IllegalStateException("Erro no processo de abertura, chame o suporte técnico", e);
         }
 
-        // 5. Lançamento inicial (se houver valor)
         processarLancamentoInicial(caixa, usuarioLogado);
 
         return caixa.getCodigo();
     }
-
-    // --- Métodos Auxiliares para reduzir Complexidade Cognitiva ---
 
     private void validarAbertura(Caixa caixa) {
         if (CaixaTipo.CAIXA.equals(caixa.getTipo()) && caixaIsAberto()) {
@@ -116,7 +109,6 @@ public class CaixaService {
                         TipoLancamento.SALDOINICIAL, EstiloLancamento.ENTRADA, caixa, usuario);
                 lancamentos.lancamento(lancamento);
             } catch (Exception e) {
-                logger.error("Erro ao processar lançamento inicial", e);
                 throw new IllegalStateException("Erro no processo de lançamento inicial, chame o suporte", e);
             }
         } else {
@@ -129,8 +121,6 @@ public class CaixaService {
         if (CaixaTipo.COFRE.equals(tipo)) return "Abertura de cofre";
         return "Abertura de banco";
     }
-
-    // --- Fim dos auxiliares ---
 
     public String fechaCaixa(Long idCaixa, String senha) {
         Aplicacao aplicacao = Aplicacao.getInstancia();
@@ -165,7 +155,6 @@ public class CaixaService {
             caixas.save(caixaAtual);
             return "Caixa fechado com sucesso";
         } catch (Exception e) {
-            logger.error("Erro ao fechar caixa {}", idCaixa, e);
             throw new IllegalStateException("Ocorreu um erro ao fechar o caixa, chame o suporte", e);
         }
     }
@@ -179,7 +168,6 @@ public class CaixaService {
     }
 
     public List<Caixa> listarCaixas(CaixaFilter filter) {
-        // Fusão do IF aninhado (melhoria apontada pelo Sonar)
         if (filter.getData_cadastro() != null && !filter.getData_cadastro().isEmpty()) {
             String dataFormatada = filter.getData_cadastro().replace("/", "-");
             return caixas.buscaCaixasPorDataAbertura(Date.valueOf(dataFormatada));
@@ -201,7 +189,6 @@ public class CaixaService {
 
     public Optional<Caixa> buscaCaixaUsuario(String nomeUsuario) {
         Usuario usu = usuarios.buscaUsuario(nomeUsuario);
-        // Retorno direto sem variável temporária (melhoria apontada pelo Sonar)
         return Optional.ofNullable(caixas.findByCaixaAbertoUsuario(usu.getCodigo()));
     }
 
