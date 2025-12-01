@@ -88,7 +88,7 @@ public class FornecedorSistemaTest {
         assertTrue(tabela.isDisplayed());
     }
 
-  /*  @Test
+   @Test
 @DisplayName("Fornecedor - Cadastro completo de fornecedor")
 public void testCadastroFornecedor() {
 
@@ -107,9 +107,9 @@ public void testCadastroFornecedor() {
             By.id("form_fornecedor") 
     ));
 
-    driver.findElement(By.id("nomefantasia")).sendKeys("Fornecedor Teste LTDA");
+    driver.findElement(By.id("nomefantasia")).sendKeys("Fornecedor Teste Selenium LTDA");
     driver.findElement(By.id("nome")).sendKeys("Fornecedor Teste");
-    driver.findElement(By.id("cnpj")).sendKeys("01.199.280/0001-71");
+    driver.findElement(By.id("cnpj")).sendKeys("76.256.662/0001-99");
     driver.findElement(By.id("escricao")).sendKeys("1234567");
     driver.findElement(By.id("situacao")).sendKeys("Ativo");
 
@@ -136,7 +136,7 @@ public void testCadastroFornecedor() {
     assertTrue(driver.findElement(By.id("nome")).getAttribute("value").isEmpty(),
             "Campo 'nome' deveria ter sido limpo após salvar");
 }
- */
+
 @Test
 @DisplayName("Fornecedor - Atualização de fornecedor existente")
 public void testAtualizacaoFornecedor() {
@@ -222,7 +222,7 @@ public void testCadastroFornecedorCnpjDuplicado() {
 
     driver.findElement(By.id("nomefantasia")).sendKeys("FORNECEDOR DUPLICADO");
     driver.findElement(By.id("nome")).sendKeys("Fornecedor Duplicado");
-    driver.findElement(By.id("cnpj")).sendKeys("36.621.461/0001-29");
+    driver.findElement(By.id("cnpj")).sendKeys("76.256.662/0001-99");
     driver.findElement(By.id("escricao")).sendKeys("9999999");
     driver.findElement(By.id("situacao")).sendKeys("Ativo");
 
@@ -264,6 +264,38 @@ public void testCadastroFornecedorCnpjDuplicado() {
     );
 }
 
+@Test
+@DisplayName("Fornecedor - Consulta por filtro parcial (Alpha)")
+public void testConsultaFornecedorPorFiltro() {
+
+    driver.get(BASE_URL + "/fornecedor");
+
+    wait.until(ExpectedConditions.visibilityOfElementLocated(
+            By.id("tabela-fornecedores")
+    ));
+
+    WebElement campoFiltro = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(
+                    By.id("input-busca-fornecedor")
+            )
+    );
+
+    campoFiltro.clear();
+    campoFiltro.sendKeys("Alpha");
+
+    driver.findElement(By.id("btn-buscar-fornecedor")).click();
+
+    wait.until(ExpectedConditions.visibilityOfElementLocated(
+            By.id("tabela-fornecedores")
+    ));
+
+    WebElement fornecedorFiltrado = driver.findElement(
+            By.xpath("//*[contains(text(),'Alpha')]")
+    );
+
+    Assertions.assertTrue(fornecedorFiltrado.isDisplayed());
+}
+
 
 
 
@@ -272,3 +304,4 @@ public void testCadastroFornecedorCnpjDuplicado() {
 
     
 }
+ 
