@@ -147,7 +147,7 @@ public class PagarServiceTest {
             service.cadastrar(1L, 100.0, "Obs", LocalDate.now(), pagarTipoMock);
         });
 
-        assertEquals("Erro ao lançar despesa, chame o suporte", exception.getMessage());
+        assertEquals("Erro ao lançar despesa (parcela), chame o suporte", exception.getMessage());
     }
 
     @Test
@@ -258,7 +258,7 @@ public class PagarServiceTest {
             service.quitar(codParcela, 200.0, 0.0, 0.0, 1L);
         });
         
-        assertEquals("Valor de pagamento inválido", ex.getMessage());
+        assertEquals("Valor de pagamento inválido. O valor pago excede o restante.", ex.getMessage());
         verify(pagarParcelaServ, never()).merger(any());
     }
 
@@ -306,7 +306,7 @@ public class PagarServiceTest {
                 service.quitar(codParcela, 100.0, 0.0, 0.0, 1L);
             });
             
-            assertEquals("Ocorreu um erro ao realizar o pagamento, chame o suporte", ex.getMessage());
+            assertEquals("Ocorreu um erro ao realizar o pagamento no caixa, chame o suporte", ex.getMessage());
             
             verify(pagarParcelaServ).merger(parcelaMock);
         }
