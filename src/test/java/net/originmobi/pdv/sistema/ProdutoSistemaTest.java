@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -37,7 +38,10 @@ public class ProdutoSistemaTest {
         options.addArguments("--remote-allow-origins=*");
         options.addArguments("--start-maximized");
 
-        driver = WebDriverManager.chromedriver().create();
+        driver = WebDriverManager.chromedriver()
+                .capabilities(options)
+                .create();
+
         wait = new WebDriverWait(driver, Duration.ofSeconds(10));
         driver.manage().window().maximize();
 
@@ -46,19 +50,17 @@ public class ProdutoSistemaTest {
         produtoFormPage = new ProdutoFormPage(driver, wait);
 
         driver.get(BASE_URL + "/login");
-        WebElement userField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("user")));
-        WebElement passField = driver.findElement(By.id("password"));
-        WebElement btnLogin = driver.findElement(By.id("btn-login"));
 
+        WebElement userField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("user")));
         userField.sendKeys("gerente");
-        passField.sendKeys("123");
-        btnLogin.click();
+        driver.findElement(By.id("password")).sendKeys("123");
+        driver.findElement(By.id("btn-login")).click();
 
         wait.until(ExpectedConditions.not(ExpectedConditions.urlContains("/login")));
     }
 
-    @AfterAll
-    public static void tearDown() {
+    @AfterEach
+    public void tearDown() {
         if (driver != null) {
             driver.quit();
         }
