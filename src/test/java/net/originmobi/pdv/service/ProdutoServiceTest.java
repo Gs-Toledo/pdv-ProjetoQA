@@ -12,6 +12,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import java.util.Arrays;
+import java.util.Collections;
+
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -401,5 +404,58 @@ public class ProdutoServiceTest {
         
         verify(produtos, never()).findByDescricaoContaining(eq(null), any());
     }
+
+@Test
+void listar_deveRetornarListaDeProdutos() {
+    Produto p1 = new Produto();
+    Produto p2 = new Produto();
+
+    when(produtos.findAll()).thenReturn(Arrays.asList(p1, p2));
+
+    List<Produto> resultado = service.listar();
+
+    assertEquals(2, resultado.size());
+    verify(produtos, times(1)).findAll();
+}
+
+@Test
+void listaProdutosVendaveis_deveRetornarProdutosVendaveis() {
+    Produto p1 = new Produto();
+
+    when(produtos.produtosVendaveis()).thenReturn(Collections.singletonList(p1));
+
+    List<Produto> resultado = service.listaProdutosVendaveis();
+
+    assertEquals(1, resultado.size());
+    verify(produtos, times(1)).produtosVendaveis();
+}
+
+    @Test
+    void busca_deveRetornarProdutoPorCodigo() {
+        Long codigo = 30L;
+        Produto produto = new Produto();
+        produto.setCodigo(codigo);
+
+        when(produtos.findByCodigoIn(codigo)).thenReturn(produto);
+
+        Produto resultado = service.busca(codigo);
+
+        assertNotNull(resultado);
+        assertEquals(codigo, resultado.getCodigo());
+        verify(produtos, times(1)).findByCodigoIn(codigo);
+    }
+
+
+    @Test
+    void movimentaEstoque_naoDeveFazerNadaQuandoListaEstiverVazia() {
+        Long codVenda = 90L;
+
+        when(vendaProdutos.buscaQtdProduto(codVenda)).thenReturn(Collections.emptyList());
+
+        service.movimentaEstoque(codVenda, EntradaSaida.SAIDA);
+
+        verify(produtos, never()).movimentaEstoque(any(), any(), anyInt(), any(), any());
+    }
+
 
 }
