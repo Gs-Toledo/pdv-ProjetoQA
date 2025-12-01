@@ -10,7 +10,6 @@ public class LoginPage {
     private WebDriver driver;
     private WebDriverWait wait;
 
-    // Localizadores
     private By userField = By.id("user");
     private By passwordField = By.id("password");
     private By btnLogin = By.id("btn-login");
