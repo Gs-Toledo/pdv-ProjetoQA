@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import net.originmobi.pdv.dto.CategoriaDTO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -19,10 +20,13 @@ public class CategoriaService {
 	@Autowired
 	private CategoriaRepository categorias;
 
-	public void cadastrar(Categoria categoria) {
-		categoria.setData_cadastro(Date.valueOf(dataAtual));
-		categorias.save(categoria);
-	}
+    public void cadastrar(CategoriaDTO dto) {
+
+        Categoria categoria = new Categoria();
+        categoria.setData_cadastro(Date.valueOf(dataAtual));
+
+        categorias.save(categoria);
+    }
 
 	public List<Categoria> lista() {
 		return categorias.findAll();
