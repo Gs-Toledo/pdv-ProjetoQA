@@ -16,11 +16,35 @@ import io.github.bonigarcia.wdm.WebDriverManager;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
 public class UsuarioSistemaTest {
 
     private WebDriver driver;
     private WebDriverWait wait;
     private final String BASE_URL = "http://localhost:8080";
+    private int clickCount = 0;
+
+    private void clicar(By by) {
+        driver.findElement(by).click();
+        clickCount++;
+    }
+
+    private void clicar(WebElement element) {
+        element.click();
+        clickCount++;
+    }
+
+    private void avaliarUsabilidade() {
+        System.out.println("Total de cliques realizados no fluxo: " + clickCount);
+
+        if (clickCount <= 5) {
+            System.out.println("Usabilidade: OK (≤5 cliques)");
+        } else if (clickCount <= 8) {
+            System.out.println("Usabilidade: MÉDIA (6–8 cliques)");
+        } else {
+            System.out.println("Usabilidade: RUIM (>8 cliques)");
+        }
+    }
 
     @BeforeEach
     public void setUp() {
@@ -28,7 +52,7 @@ public class UsuarioSistemaTest {
         driver = new ChromeDriver();
         driver.manage().window().maximize();
         wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-        
+
         realizarLogin("gerente", "123");
     }
 
@@ -42,13 +66,13 @@ public class UsuarioSistemaTest {
     private void realizarLogin(String user, String pass) {
         driver.get(BASE_URL + "/login");
         if (!driver.getCurrentUrl().contains("login")) {
-             driver.get(BASE_URL + "/logout");
-             driver.get(BASE_URL + "/login");
+            driver.get(BASE_URL + "/logout");
+            driver.get(BASE_URL + "/login");
         }
-        
+
         driver.findElement(By.id("user")).sendKeys(user);
         driver.findElement(By.id("password")).sendKeys(pass);
-        driver.findElement(By.id("btn-login")).click();
+        clicar(By.id("btn-login"));
     }
 
     @Test
@@ -58,29 +82,35 @@ public class UsuarioSistemaTest {
 
         try {
             Select selectPessoa = new Select(driver.findElement(By.id("pessoa")));
-            selectPessoa.selectByIndex(1); 
+            selectPessoa.selectByIndex(1);
 
             driver.findElement(By.id("userName")).sendKeys("vendedor02");
             driver.findElement(By.id("password")).sendKeys("123456");
 
-            driver.findElement(By.cssSelector("button[type='submit']")).click();
+            clicar(By.cssSelector("button[type='submit']"));
 
             wait.until(ExpectedConditions.urlContains("/usuario"));
 
             driver.get(BASE_URL + "/usuario");
-            
-            driver.findElement(By.xpath("//td[contains(text(),'vendedor02')]/..//a[contains(@href, 'editar')]")).click();
 
-            Select selectGrupo = new Select(driver.findElement(By.id("grupo"))); 
+            WebElement botaoEditar = driver.findElement(
+                    By.xpath("//td[contains(text(),'vendedor02')]/..//a[contains(@href, 'editar')]")
+            );
+            clicar(botaoEditar);
+
+            Select selectGrupo = new Select(driver.findElement(By.id("grupo")));
             selectGrupo.selectByVisibleText("Vendedor");
-            
-            driver.findElement(By.id("btn-add-grupo")).click();
-            
+
+            clicar(By.id("btn-add-grupo"));
+
             Thread.sleep(1000);
 
-            WebElement tabelaGrupos = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("tabela-grupos-usuario")));
+            WebElement tabelaGrupos = wait.until(
+                    ExpectedConditions.visibilityOfElementLocated(By.id("tabela-grupos-usuario"))
+            );
             assertTrue(tabelaGrupos.getText().contains("Vendedor"));
-            
+            avaliarUsabilidade();
+
         } catch (Exception e) {
             System.out.println("Erro ao testar grupo: " + e.getMessage());
         }
@@ -97,10 +127,12 @@ public class UsuarioSistemaTest {
         driver.get(BASE_URL + "/relatorios/financeiro");
 
         String pageTitle = driver.getTitle();
-        boolean acessoNegado = pageTitle.contains("403") || 
-                               driver.getCurrentUrl().contains("login") ||
-                               driver.getPageSource().contains("Acesso Negado");
-        
+        boolean acessoNegado =
+                pageTitle.contains("403")
+                        || driver.getCurrentUrl().contains("login")
+                        || driver.getPageSource().contains("Acesso Negado");
+
         assertTrue(acessoNegado);
+        avaliarUsabilidade();
     }
 }
