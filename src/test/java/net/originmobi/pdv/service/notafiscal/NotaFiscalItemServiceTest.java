@@ -6,9 +6,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyChar;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import java.util.Optional;
 import java.util.Collections;
@@ -30,6 +34,7 @@ import net.originmobi.pdv.model.CstCsosn;
 import net.originmobi.pdv.model.CFOP;
 import net.originmobi.pdv.model.ModBcIcms;
 import net.originmobi.pdv.model.NotaFiscalItem;
+import net.originmobi.pdv.model.NotaFiscalItemImposto;
 import net.originmobi.pdv.model.NotaFiscalTotais;
 import net.originmobi.pdv.service.ProdutoService;
 import net.originmobi.pdv.repository.notafiscal.NotaFiscalItemRepository;
@@ -111,11 +116,9 @@ class NotaFiscalItemServiceTest {
         produtoSemUnidade.setTributacao(new Tributacao());
         produtoSemUnidade.setNcm("0101.01.01");
         
-        // Garante que o if de Substituição Tributária (CC: 4) não seja ativado
-        // Assume-se que ProdutoSubstTributaria.NAO existe
+  
         produtoSemUnidade.setSubtributaria(ProdutoSubstTributaria.NAO); 
         
-        // Aresta de falha
         produtoSemUnidade.setUnidade(""); 
 
         when(produtos.buscaProduto(COD_PROD)).thenReturn(Optional.of(produtoSemUnidade));
@@ -153,18 +156,15 @@ class NotaFiscalItemServiceTest {
     void TC_06_insere_deveFalharSeProdutoSemRegraDeSaida() {
         Long COD_PROD = 1L;
         
-        // Cria um Produto totalmente válido para passar nas CC: 1 a 5
         Produto produtoSemRegraSaida = new Produto();
         produtoSemRegraSaida.setNcm("0101.01.01");
         produtoSemRegraSaida.setUnidade("UN");
         produtoSemRegraSaida.setSubtributaria(ProdutoSubstTributaria.NAO);
 
-        // Cria uma Tributação que tem regras, mas nenhuma é do tipo SAIDA.
         Tributacao tributacaoApenasEntrada = new Tributacao();
         TributacaoRegra regraEntrada = new TributacaoRegra();
         regraEntrada.setTipo(EntradaSaida.ENTRADA); // Apenas entrada
         
-        // Configura o produto com apenas regras de entrada
         tributacaoApenasEntrada.setRegra(Collections.singletonList(regraEntrada));
         produtoSemRegraSaida.setTributacao(tributacaoApenasEntrada);
 
@@ -172,7 +172,7 @@ class NotaFiscalItemServiceTest {
         when(notas.busca(1L)).thenReturn(Optional.of(new NotaFiscal()));
 
         RuntimeException excecao = assertThrows(RuntimeException.class, () -> {
-            // Tenta inserir uma nota de SAIDA
+            
             service.insere(COD_PROD, 1L, 1, NotaFiscalTipo.SAIDA);
         });
 
@@ -199,64 +199,312 @@ class NotaFiscalItemServiceTest {
         when(notas.busca(1L)).thenReturn(Optional.of(new NotaFiscal()));
 
         RuntimeException excecao = assertThrows(RuntimeException.class, () -> {
-            // Tenta inserir uma nota de ENTRADA
             service.insere(COD_PROD, 1L, 1, NotaFiscalTipo.ENTRADA); 
         });
 
         assertTrue(excecao.getMessage().contains("Tributação sem regra de entrada, verifique"));
     }
 
-@Test
+    @Test
     void TC_08_insere_deveExecutarComSucessoNotaSaidaERegraEncontrada() {
         Long COD_PROD = 1L;
         String UF_DESTINATARIO = "SP";
 
         Estado estado = new Estado();
         estado.setSigla(UF_DESTINATARIO);
+
         Cidade cidade = new Cidade();
         cidade.setEstado(estado);
+
         Endereco endereco = new Endereco();
         endereco.setCidade(cidade);
-        
+
         Pessoa destinatario = new Pessoa();
         destinatario.setEndereco(endereco);
-        
+
         NotaFiscal notaFiscal = new NotaFiscal();
         notaFiscal.setDestinatario(destinatario);
         notaFiscal.setTipo(NotaFiscalTipo.SAIDA);
-        notaFiscal.setItens(Collections.emptyList()); 
+        notaFiscal.setItens(Collections.emptyList());
         notaFiscal.setTotais(new NotaFiscalTotais());
-        
+        notaFiscal.setCodigo(1L);
+
+        CstCsosn cst = new CstCsosn();
+        cst.setCst_csosn("0");
+
+        CFOP cfop = new CFOP();
+        cfop.setCfop("5102");
+
         TributacaoRegra regraCorreta = new TributacaoRegra();
         regraCorreta.setUf(estado);
         regraCorreta.setTipo(EntradaSaida.SAIDA);
-        regraCorreta.setCst_csosn(new CstCsosn());
-        regraCorreta.getCst_csosn().setCst_csosn("0");
-        regraCorreta.setCfop(new CFOP());
+        regraCorreta.setCst_csosn(cst);
+        regraCorreta.setCfop(cfop);
 
-        ModBcIcms modBcIcmsPauta = new ModBcIcms();
-        modBcIcmsPauta.setTipo(1); 
-        modBcIcmsPauta.setDescricao("Pauta");
-        
-        // Simulação do Produto
         Tributacao tributacao = new Tributacao();
-        List<TributacaoRegra> regras = Arrays.asList(regraCorreta);
-        
+        tributacao.setRegra(Collections.singletonList(regraCorreta));
+
+        ModBcIcms modBcIcms = new ModBcIcms();
+        modBcIcms.setTipo(1);
+
         Produto produtoValido = new Produto();
         produtoValido.setNcm("0101.01.01");
         produtoValido.setUnidade("UN");
         produtoValido.setSubtributaria(ProdutoSubstTributaria.NAO);
         produtoValido.setTributacao(tributacao);
         produtoValido.setValor_venda(10.0);
-        produtoValido.setModBcIcms(modBcIcmsPauta); // Setando o objeto criado
-        
+        produtoValido.setModBcIcms(modBcIcms);
+
         when(produtos.buscaProduto(COD_PROD)).thenReturn(Optional.of(produtoValido));
         when(notas.busca(1L)).thenReturn(Optional.of(notaFiscal));
-        when(itemServer.save(any(NotaFiscalItem.class))).thenAnswer(i -> i.getArguments()[0]);
+        when(impostos.calcula(any(), anyDouble(), any(), anyChar(), anyInt()))
+                .thenReturn(new NotaFiscalItemImposto());
+        when(itemServer.save(any(NotaFiscalItem.class)))
+                .thenAnswer(i -> i.getArguments()[0]);
 
         assertDoesNotThrow(() -> {
             service.insere(COD_PROD, 1L, 1, NotaFiscalTipo.SAIDA);
         });
     }
+
+
+
+    @Test
+    void TC_09_insere_deveAtualizarItemQuandoProdutoJaExistirNaNota() {
+        Long COD_PROD = 1L;
+        String UF_DESTINATARIO = "SP";
+
+        Estado estado = new Estado();
+        estado.setSigla(UF_DESTINATARIO);
+
+        Cidade cidade = new Cidade();
+        cidade.setEstado(estado);
+
+        Endereco endereco = new Endereco();
+        endereco.setCidade(cidade);
+
+        Pessoa destinatario = new Pessoa();
+        destinatario.setEndereco(endereco);
+
+        NotaFiscalItemImposto impostoExistente = new NotaFiscalItemImposto();
+        impostoExistente.setCodigo(10L);
+
+        NotaFiscalItem itemExistente = new NotaFiscalItem();
+        itemExistente.setCodigo(20L);
+        itemExistente.setCodProd(COD_PROD);
+        itemExistente.setQtd(2);
+        itemExistente.setImpostos(impostoExistente);
+
+        NotaFiscal notaFiscal = new NotaFiscal();
+        notaFiscal.setDestinatario(destinatario);
+        notaFiscal.setTipo(NotaFiscalTipo.SAIDA);
+        notaFiscal.setItens(Collections.singletonList(itemExistente));
+        notaFiscal.setTotais(new NotaFiscalTotais());
+        notaFiscal.setCodigo(1L);
+
+        CstCsosn cst = new CstCsosn();
+        cst.setCst_csosn("0");
+
+        CFOP cfop = new CFOP();
+        cfop.setCfop("5102");
+
+        TributacaoRegra regra = new TributacaoRegra();
+        regra.setUf(estado);
+        regra.setTipo(EntradaSaida.SAIDA);
+        regra.setCst_csosn(cst);
+        regra.setCfop(cfop);
+
+        Tributacao tributacao = new Tributacao();
+        tributacao.setRegra(Collections.singletonList(regra));
+
+        ModBcIcms modBcIcms = new ModBcIcms();
+        modBcIcms.setTipo(1);
+
+        Produto produto = new Produto();
+        produto.setNcm("0101.01.01");
+        produto.setUnidade("UN");
+        produto.setSubtributaria(ProdutoSubstTributaria.NAO);
+        produto.setTributacao(tributacao);
+        produto.setValor_venda(10.0);
+        produto.setModBcIcms(modBcIcms);
+
+        when(produtos.buscaProduto(COD_PROD)).thenReturn(Optional.of(produto));
+        when(notas.busca(1L)).thenReturn(Optional.of(notaFiscal));
+        when(impostos.calcula(any(), anyDouble(), any(), anyChar(), anyInt()))
+                .thenReturn(new NotaFiscalItemImposto());
+        when(itemServer.save(any(NotaFiscalItem.class))).thenAnswer(i -> i.getArguments()[0]);
+
+        assertDoesNotThrow(() -> {
+            service.insere(COD_PROD, 1L, 1, NotaFiscalTipo.SAIDA);
+        });
+    };
+
+    @Test
+    void TC_10_insere_deveFalharQuandoNaoExistirRegraParaUF() {
+        Long COD_PROD = 1L;
+
+        Estado estadoRegra = new Estado();
+        estadoRegra.setSigla("RJ");
+
+        Estado estadoDestinatario = new Estado();
+        estadoDestinatario.setSigla("SP");
+
+        Cidade cidade = new Cidade();
+        cidade.setEstado(estadoDestinatario);
+
+        Endereco endereco = new Endereco();
+        endereco.setCidade(cidade);
+
+        Pessoa destinatario = new Pessoa();
+        destinatario.setEndereco(endereco);
+
+        NotaFiscal notaFiscal = new NotaFiscal();
+        notaFiscal.setDestinatario(destinatario);
+        notaFiscal.setTipo(NotaFiscalTipo.SAIDA);
+        notaFiscal.setItens(Collections.emptyList());
+        notaFiscal.setTotais(new NotaFiscalTotais());
+
+        CstCsosn cst = new CstCsosn();
+        cst.setCst_csosn("0");
+
+        CFOP cfop = new CFOP();
+        cfop.setCfop("5102");
+
+        TributacaoRegra regraIncompativel = new TributacaoRegra();
+        regraIncompativel.setUf(estadoRegra);
+        regraIncompativel.setTipo(EntradaSaida.SAIDA);
+        regraIncompativel.setCst_csosn(cst);
+        regraIncompativel.setCfop(cfop);
+
+        Tributacao tributacao = new Tributacao();
+        tributacao.setRegra(Collections.singletonList(regraIncompativel));
+
+        ModBcIcms modBcIcms = new ModBcIcms();
+        modBcIcms.setTipo(1);
+
+        Produto produto = new Produto();
+        produto.setNcm("0101.01.01");
+        produto.setUnidade("UN");
+        produto.setSubtributaria(ProdutoSubstTributaria.NAO);
+        produto.setTributacao(tributacao);
+        produto.setValor_venda(10.0);
+        produto.setModBcIcms(modBcIcms);
+
+        when(produtos.buscaProduto(COD_PROD)).thenReturn(Optional.of(produto));
+        when(notas.busca(1L)).thenReturn(Optional.of(notaFiscal));
+
+        RuntimeException excecao = assertThrows(RuntimeException.class, () -> {
+            service.insere(COD_PROD, 1L, 1, NotaFiscalTipo.SAIDA);
+        });
+
+        assertTrue(excecao.getMessage().contains("Nenhuma regra de tributação cadastrada para a UF do destinatário"));
+    }
+
+    @Test
+    void TC_11_insere_deveFalharQuandoErroAoSalvarItem() {
+        Long COD_PROD = 1L;
+        String UF_DESTINATARIO = "SP";
+
+        Estado estado = new Estado();
+        estado.setSigla(UF_DESTINATARIO);
+
+        Cidade cidade = new Cidade();
+        cidade.setEstado(estado);
+
+        Endereco endereco = new Endereco();
+        endereco.setCidade(cidade);
+
+        Pessoa destinatario = new Pessoa();
+        destinatario.setEndereco(endereco);
+
+        NotaFiscal notaFiscal = new NotaFiscal();
+        notaFiscal.setDestinatario(destinatario);
+        notaFiscal.setTipo(NotaFiscalTipo.SAIDA);
+        notaFiscal.setItens(Collections.emptyList());
+        notaFiscal.setTotais(new NotaFiscalTotais());
+        notaFiscal.setCodigo(1L);
+
+        CstCsosn cst = new CstCsosn();
+        cst.setCst_csosn("0");
+
+        CFOP cfop = new CFOP();
+        cfop.setCfop("5102");
+
+        TributacaoRegra regra = new TributacaoRegra();
+        regra.setUf(estado);
+        regra.setTipo(EntradaSaida.SAIDA);
+        regra.setCst_csosn(cst);
+        regra.setCfop(cfop);
+
+        Tributacao tributacao = new Tributacao();
+        tributacao.setRegra(Collections.singletonList(regra));
+
+        ModBcIcms modBcIcms = new ModBcIcms();
+        modBcIcms.setTipo(1);
+
+        Produto produto = new Produto();
+        produto.setNcm("0101.01.01");
+        produto.setUnidade("UN");
+        produto.setSubtributaria(ProdutoSubstTributaria.NAO);
+        produto.setTributacao(tributacao);
+        produto.setValor_venda(10.0);
+        produto.setModBcIcms(modBcIcms);
+
+        when(produtos.buscaProduto(COD_PROD)).thenReturn(Optional.of(produto));
+        when(notas.busca(1L)).thenReturn(Optional.of(notaFiscal));
+        when(impostos.calcula(any(), anyDouble(), any(), anyChar(), anyInt()))
+                .thenReturn(new NotaFiscalItemImposto());
+        when(itemServer.save(any(NotaFiscalItem.class))).thenThrow(new RuntimeException("Erro banco"));
+
+        RuntimeException excecao = assertThrows(RuntimeException.class, () -> {
+            service.insere(COD_PROD, 1L, 1, NotaFiscalTipo.SAIDA);
+        });
+
+        assertTrue(excecao.getMessage().contains("Erro ao salvar item na nota, chame o suporte"));
+    }
+
+    @Test
+    void TC_12_remove_deveRemoverItemEAtualizarTotais() {
+        Long COD_ITEM = 10L;
+        Long COD_NOTA = 1L;
+
+        NotaFiscal notaFiscal = new NotaFiscal();
+        notaFiscal.setTotais(new NotaFiscalTotais());
+
+        when(notas.busca(COD_NOTA)).thenReturn(Optional.of(notaFiscal));
+
+        assertDoesNotThrow(() -> {
+            service.remove(COD_ITEM, COD_NOTA);
+        });
+    }
+
+    @Test
+    void TC_13_remove_deveFalharQuandoErroAoRemoverItem() {
+        Long COD_ITEM = 10L;
+        Long COD_NOTA = 1L;
+
+        doThrow(new RuntimeException("Erro banco")).when(itemServer).deleteById(COD_ITEM);
+
+        RuntimeException excecao = assertThrows(RuntimeException.class, () -> {
+            service.remove(COD_ITEM, COD_NOTA);
+        });
+
+        assertTrue(excecao.getMessage().contains("Erro ao tentar remover o item da nota, chame o suporte"));
+    }
+    
+    @Test
+    void TC_14_buscaItensNota_deveRetornarListaDoRepositorio() {
+        Long COD_NOTA = 1L;
+
+        List<Object> lista = Collections.singletonList(new Object());
+
+        when(itemServer.findByNotaFiscalCodigoEquals(COD_NOTA)).thenReturn(lista);
+
+        List<Object> resultado = service.buscaItensNota(COD_NOTA);
+
+        assertTrue(resultado.size() == 1);
+    }
+
+
 
 }
